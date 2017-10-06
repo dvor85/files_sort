@@ -39,10 +39,19 @@ def md5sum(path):
     return hashlib.md5(open(path, 'rb').read()).hexdigest()
 
 
-def fileDatetime(path):
+def fileDatetime(path, exiftool='exiftool'):
     import datetime
+    import json
+    import subprocess
+    import shlex
 
-    def datetimeFromExif(path):
+    def datetimeFromExiftool():
+        jdata = json.loads(subprocess.check_output(fs_enc(
+            u'"{exiftool}" -createdate -json "{path}"'.format(exiftool=exiftool, path=path))))
+
+        return datetime.datetime.strptime(jdata[0]["CreateDate"], "%Y:%m:%d %H:%M:%S")
+
+    def datetimeFromExif():
         from PIL import Image
         from PIL.ExifTags import TAGS
 
@@ -50,13 +59,16 @@ def fileDatetime(path):
         fields = dict((TAGS.get(k), v) for k, v in exif.iteritems())
         return datetime.datetime.strptime(fields["DateTimeOriginal"], "%Y:%m:%d %H:%M:%S")
 
-    def datetimeFromFS(path):
+    def datetimeFromFS():
         return datetime.datetime.fromtimestamp(os.path.getmtime(path))
 
     try:
-        return datetimeFromExif(path)
-    except Exception:
-        return datetimeFromFS(path)
+        return datetimeFromExiftool()
+    except Exception as e:
+        try:
+            return datetimeFromExif()
+        except Exception:
+            return datetimeFromFS()
 
 
 def safe_str(s):

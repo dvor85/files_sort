@@ -4,7 +4,16 @@ import os
 import shutil
 import utils
 import time
+import datetime
 import argparse
+import subprocess
+try:
+    import simplejson as json
+except ImportError:
+    import json
+
+
+EXIFTOOL = ur"d:\progs\exiftool\exiftool.exe"
 
 
 def create_parser():
@@ -19,11 +28,14 @@ def main():
     parser = create_parser()
     options = parser.parse_args()
 
-    path = utils.uni(options.dir)
-    srclist = utils.rListFiles(path)
-    for src_fn in srclist:
+    path = utils.true_enc(options.dir)
+    srclist = json.loads(utils.true_enc(subprocess.check_output(utils.fs_enc(
+        u'"{exiftool}" -q -L -createdate -json -r "{path}"'.format(exiftool=EXIFTOOL, path=path)))))
+    for item in srclist:
         try:
-            file_dt = utils.fileDatetime(src_fn)
+            src_fn = utils.true_enc(item['SourceFile'])
+            src_dt = item['CreateDate']
+            file_dt = datetime.datetime.strptime(src_dt, "%Y:%m:%d %H:%M:%S")
 
             folder_name = file_dt.strftime(options.directory_template)
             if not options.dont_rename:
