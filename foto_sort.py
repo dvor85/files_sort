@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import sys
 import shutil
 import utils
 import time
@@ -24,22 +25,42 @@ def create_parser():
     return parser
 
 
+def datetimeFromMeta(meta):
+    src_dt = datetime.datetime.today()
+    for k, v in meta.iteritems():
+        try:
+            if k != 'SourceFile':
+                tms = v.split('+')
+                if len(tms) == 2:
+                    tz = tms.split(':')
+                    sdt = datetime.datetime.strptime(tms[0], "%Y:%m:%d %H:%M:%S") + datetime.timedelta(hours=tz[0], minutes=tz[1])
+                else:
+                    sdt = datetime.datetime.strptime(v[:19], "%Y:%m:%d %H:%M:%S")
+                if sdt < src_dt:
+                    src_dt = sdt
+        except Exception:
+            pass
+    return src_dt
+
+
 def main():
     parser = create_parser()
     options = parser.parse_args()
 
     path = utils.true_enc(options.dir)
     srclist = json.loads(utils.true_enc(subprocess.check_output(utils.fs_enc(
-        u'"{exiftool}" -q -L -createdate -json -r "{path}"'.format(exiftool=EXIFTOOL, path=path)))))
-    for item in srclist:
+        u'"{exiftool}" -charset filename={charset} -q -m -fast2 -time:all -json -r "{path}"'.format(
+            exiftool=EXIFTOOL,
+            path=path,
+            charset=sys.getfilesystemencoding())))))
+    for meta in srclist:
         try:
-            src_fn = utils.true_enc(item['SourceFile'])
-            src_dt = item['CreateDate']
-            file_dt = datetime.datetime.strptime(src_dt, "%Y:%m:%d %H:%M:%S")
+            src_fn = utils.true_enc(meta['SourceFile'])
+            src_dt = datetimeFromMeta(meta)
 
-            folder_name = file_dt.strftime(options.directory_template)
+            folder_name = src_dt.strftime(options.directory_template)
             if not options.dont_rename:
-                new_fn = u"{dt}{ext}".format(dt=file_dt.strftime("%Y-%m-%d %H-%M-%S"), ext=os.path.splitext(src_fn)[1])
+                new_fn = u"{dt}{ext}".format(dt=src_dt.strftime("%Y-%m-%d %H-%M-%S"), ext=os.path.splitext(src_fn)[1])
             else:
                 new_fn = os.path.basename(src_fn)
 
@@ -68,7 +89,7 @@ def main():
                 except OSError:
                     pass
 
-            os.utime(dst_fn, (time.mktime(file_dt.timetuple()), time.mktime(file_dt.timetuple())))
+            os.utime(dst_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
 
         except Exception as e:
             print utils.uni(e.message)
