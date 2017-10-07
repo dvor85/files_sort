@@ -8,6 +8,7 @@ import time
 import datetime
 import argparse
 import subprocess
+import tempfile
 try:
     import simplejson as json
 except ImportError:
@@ -50,11 +51,12 @@ def main():
     options = parser.parse_args()
 
     path = utils.true_enc(options.dir)
-    srclist = json.loads(utils.true_enc(subprocess.check_output(utils.fs_enc(
-        u'"{exiftool}" -charset filename={charset} -q -m -fast -time:all -json -r "{path}"'.format(
-            exiftool=utils.true_enc(options.exiftool),
-            path=path,
-            charset=sys.getfilesystemencoding())))))
+    with tempfile.NamedTemporaryFile() as tmp:
+        subprocess.call(utils.fs_enc(
+            u'"{exiftool}" -q -m -fast -time:all -json -r "{path}"'.format(
+                exiftool=utils.true_enc(options.exiftool),
+                path=path)), stdout=tmp)
+        srclist = json.load(tmp, encoding='utf8')
     for meta in srclist:
         try:
             src_fn = utils.true_enc(os.path.normpath(meta['SourceFile']))
