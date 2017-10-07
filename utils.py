@@ -85,14 +85,21 @@ def parse_str(s):
     return s
 
 
-def str2num(s):
+def str2num(s, default=0):
     try:
         return int(s)
     except:
         try:
             return float(s)
         except:
-            return 0
+            return default
+
+
+def str2int(str_val, default=0):
+    try:
+        return int(str_val)
+    except:
+        return default
 
 
 def uniq(seq):
@@ -112,12 +119,20 @@ def rListFiles(path):
     return files
 
 
-def uni(path):
+def uni(path, from_encoding=None):
     """
-    Декодирует строку из кодировки файловой системы
+    Декодирует строку из кодировки encoding
+    :path: строка для декодирования
+    :from_encoding: Кодировка из которой декодировать. Если не задана, то sys.getfilesystemencoding()
+    :return: unicode path
     """
+
     if isinstance(path, str):
-        path = path.decode(sys.getfilesystemencoding(), errors='ignore')
+        if from_encoding is None:
+            from_encoding = sys.getfilesystemencoding()
+        if from_encoding is None:
+            from_encoding = 'utf8'
+        path = path.decode(from_encoding, 'ignore')
     return path
 
 
@@ -126,17 +141,17 @@ def utf(path):
     Кодирует в utf8
     """
     if isinstance(path, unicode):
-        return path.encode('utf8', errors='ignore')
+        return path.encode('utf8', 'ignore')
     return path
 
 
-def true_enc(path):
+def true_enc(path, from_encoding=None):
     """
     Для файловых операций в windows нужен unicode.
     Для остальных - utf8
     """
     if sys.platform.startswith('win'):
-        return uni(path)
+        return uni(path, from_encoding)
     return utf(path)
 
 
@@ -144,156 +159,14 @@ def fs_enc(path):
     """
     windows workaround. Используется в Popen.
     """
-    return uni(path).encode(sys.getfilesystemencoding(), 'ignore')
+    enc = sys.getfilesystemencoding()
+    if enc is None:
+        enc = 'utf8'
+    return uni(path).encode(enc, 'ignore')
 
 
-def get_user_name():
-    """
-    If running on windows, first Try get username via _get_user_of_session2.
-    If it failed, then try via get_user_of_session. Other get username from environment variable.
-    """
-    __env_var = 'USER'
-    if sys.platform.startswith('win'):
-        try:
-            __env_var = 'USERNAME'
-            sess = get_session_of_pid(os.getpid())
-            try:
-                sessuser = get_user_of_session(sess)
-            except Exception:
-                sessuser = os.getenv(__env_var)
-
-            if len(sessuser) > 0:
-                return true_enc(sessuser)
-
-        except Exception:
-            pass
-    return true_enc(os.getenv(__env_var))
-
-
-def get_session_of_pid(pid):
-    try:
-        return _get_session_of_pid2(pid)
-    except Exception:
-        try:
-            return _get_session_of_pid(pid)
-        except Exception:
-            return 0
-
-
-def get_user_of_session(sess):
-    """
-    Return Loggedon username of session via pywin32
-    :sess: Logon session
-    :return: Loggedon username
-    """
-    if sys.platform.startswith('win'):
-        for sessdata in enumerate_logonsessions():
-            try:
-                if sessdata.get('Session') == sess:
-                    if sessdata.get('UserName'):
-                        return true_enc(sessdata.get('UserName'))
-            except Exception:
-                pass
-    raise Exception(fmt('Session user of "{sess}" not defined', sess))
-
-
-def _get_session_of_pid(pid):
-    """
-    Get logon session via tasklist
-    :pid: process id
-    :return: logon session or raise Exception
-    """
-    if sys.platform.startswith('win'):
-        from subprocess import check_output
-        tasklist = check_output(fmt('tasklist /fi "PID eq {pid}" /fo csv /nh', pid=pid), shell=True).splitlines()
-        for t in tasklist:
-            try:
-                task = t.replace('"', '').split(',')
-                if int(task[1]) == int(pid):
-                    return int(task[3])
-            except Exception:
-                pass
-        raise Exception(fmt('Session id of "{pid}" not defined', pid))
-
-
-def _get_session_of_pid2(pid):
-    """
-    Returns the session ID for the process with the given ID.
-    :pid: process id
-    :return: logon session or raise Exception
-    """
-    if sys.platform.startswith('win'):
-        from ctypes.wintypes import DWORD
-        from ctypes import windll, byref
-        sess = DWORD()
-        try:
-            result = windll.kernel32.ProcessIdToSessionId(DWORD(pid), byref(sess))
-        except Exception:  # may be running on windows xp where no ProcessIdToSessionId function
-            return 0L
-        if not result:
-            raise OSError(3, 'No such process')
-        return sess.value
-
-
-def _enumerate_logonsessions():
-    """
-    :return: generator dict(Session, UserName, LogonType)
-    """
-    if sys.platform.startswith('win'):
-        import winreg
-        branch = 'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Authentication\\LogonUI\\SessionData'
-        i = 0
-        try:
-            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, branch, 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY)
-            while True:
-                key_sess = None
-                try:
-                    sess = winreg.EnumKey(key, i)
-                    branch_sess = fmt("{0}\\{1}", branch, sess)
-                    key_sess = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, branch_sess, 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY)
-                    j = 0
-                    while True:
-                        try:
-                            value = winreg.EnumValue(key_sess, j)
-                            if value[0] in ('LoggedOnUsername', 'LoggedOnUser', 'LoggedOnSAMUser'):
-                                if len(os.path.basename(value[1])) > 0:
-                                    yield dict(Session=int(sess), UserName=os.path.basename(value[1]), LogonType=2)
-                                    break
-                            j += 1
-                        except WindowsError:
-                            break
-                    i += 1
-                except WindowsError:
-                    break
-                finally:
-                    if key_sess:
-                        winreg.CloseKey(key_sess)
-        finally:
-            if key:
-                winreg.CloseKey(key)
-
-
-def _enumerate_logonsessions2():
-    """
-    Enumerate logon sessions via pywin32
-    """
-    if sys.platform.startswith('win'):
-        import win32security
-        for s in win32security.LsaEnumerateLogonSessions():
-            try:
-                yield win32security.LsaGetLogonSessionData(s)
-            except Exception:
-                pass
-
-
-def enumerate_logonsessions():
-    try:
-        for sessdata in _enumerate_logonsessions():
-            yield sessdata
-    except Exception:
-        pass
-    for sessdata in _enumerate_logonsessions2():
-        yield sessdata
+def lower(s, from_encoding=None):
+    return utf(uni(s, from_encoding).lower())
 
 
 def get_comp_name():
