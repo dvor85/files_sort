@@ -9,6 +9,7 @@ import datetime
 import argparse
 import subprocess
 import tempfile
+import locale
 try:
     import simplejson as json
 except ImportError:
@@ -28,22 +29,22 @@ def create_parser():
     return parser
 
 
+EXIF_PARAMS = ('DateTimeOriginal', 'CreateDate', 'ModifyDate', 'FileModifyDate', 'FileCreateDate')
+
+
 def datetimeFromMeta(meta):
-    src_dt = datetime.datetime.today()
-    for k, v in meta.iteritems():
+    for x in EXIF_PARAMS:
         try:
-            if k != 'SourceFile':
-                tms = v.split('+')
-                if len(tms) == 2:
-                    tz = tms.split(':')
-                    sdt = datetime.datetime.strptime(tms[0], "%Y:%m:%d %H:%M:%S") + datetime.timedelta(hours=tz[0], minutes=tz[1])
-                else:
-                    sdt = datetime.datetime.strptime(v[:19], "%Y:%m:%d %H:%M:%S")
-                if sdt < src_dt:
-                    src_dt = sdt
+            tms = meta[x].split('+')
+            if len(tms) == 2:
+                tz = tms[1].split(':')
+                return datetime.datetime.strptime(tms[0], "%Y:%m:%d %H:%M:%S") + \
+                    datetime.timedelta(hours=utils.str2int(tz[0]), minutes=utils.str2int(tz[1]))
+            else:
+                return datetime.datetime.strptime(meta[x][:19], "%Y:%m:%d %H:%M:%S")
         except Exception:
             pass
-    return src_dt
+    return datetime.datetime.today()
 
 
 def main():
@@ -53,10 +54,14 @@ def main():
     path = utils.true_enc(options.dir)
     with tempfile.NamedTemporaryFile() as tmp:
         subprocess.call(utils.fs_enc(
-            u'"{exiftool}" -q -m -fast -time:all -json -r "{path}"'.format(
+            u'"{exiftool}" -charset filename={charset} -q -m -fast \
+             -json -r "{path}"'.format(
+                exif_params=" ".join(['-%s' % x for x in EXIF_PARAMS]),
                 exiftool=utils.true_enc(options.exiftool),
-                path=path)), stdout=tmp)
-        srclist = json.load(tmp, encoding='utf8')
+                path=path,
+                charset=locale.getpreferredencoding())), stdout=tmp)
+        tmp.seek(0)
+        srclist = json.load(tmp)
     for meta in srclist:
         try:
             src_fn = utils.true_enc(os.path.normpath(meta['SourceFile']))
@@ -88,9 +93,10 @@ def main():
                 else:
                     i += 1
                     dst_fn = u"{fn}-{i}{ext}".format(fn=split_fn[0], i=i, ext=split_fn[1])
+            else:
+                shutil.move(src_fn, dst_fn)
+                print u"{src} -> {dst}".format(src=src_fn, dst=dst_fn)
 
-            shutil.move(src_fn, dst_fn)
-            print u"{src} -> {dst}".format(src=src_fn, dst=dst_fn)
             try:
                 os.rmdir(os.path.dirname(src_fn))
             except OSError:
