@@ -5,6 +5,7 @@ import os
 import sys
 from cgi import parse_qs, escape
 from UserDict import UserDict
+import datetime
 import re
 import string
 
@@ -40,7 +41,6 @@ def md5sum(path):
 
 
 def fileDatetime(path):
-    import datetime
 
     def datetimeFromExif():
         from PIL import Image
@@ -57,6 +57,21 @@ def fileDatetime(path):
         return datetimeFromExif()
     except Exception:
         return datetimeFromFS()
+
+
+def datetimeFromMeta(meta, exif_params):
+    for x in exif_params:
+        try:
+            tms = meta[x].split('+')
+            if len(tms) == 2:
+                tz = tms[1].split(':')
+                return datetime.datetime.strptime(tms[0], "%Y:%m:%d %H:%M:%S") + \
+                    datetime.timedelta(hours=str2int(tz[0]), minutes=str2int(tz[1]))
+            else:
+                return datetime.datetime.strptime(meta[x][:19], "%Y:%m:%d %H:%M:%S")
+        except Exception:
+            pass
+    return datetime.datetime.today()
 
 
 def safe_str(s):

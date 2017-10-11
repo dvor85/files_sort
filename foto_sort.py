@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
 
 import os
-import sys
 import shutil
 import utils
 import time
-import datetime
 import argparse
 import subprocess
 import tempfile
@@ -18,7 +16,7 @@ except ImportError:
 
 def create_parser():
     parser = argparse.ArgumentParser(prog='foto_sort.py', add_help=True)
-    parser.add_argument('--dir', '-d', required=True,
+    parser.add_argument('dir',
                         help='DIRECTORY for process')
     parser.add_argument('--directory-template', '-t',
                         help='Create directories with TEMPLATE. Default="%%Y-%%m"', default='%Y-%m')
@@ -30,21 +28,6 @@ def create_parser():
 
 
 EXIF_PARAMS = ('DateTimeOriginal', 'CreateDate', 'ModifyDate', 'FileModifyDate', 'FileCreateDate')
-
-
-def datetimeFromMeta(meta):
-    for x in EXIF_PARAMS:
-        try:
-            tms = meta[x].split('+')
-            if len(tms) == 2:
-                tz = tms[1].split(':')
-                return datetime.datetime.strptime(tms[0], "%Y:%m:%d %H:%M:%S") + \
-                    datetime.timedelta(hours=utils.str2int(tz[0]), minutes=utils.str2int(tz[1]))
-            else:
-                return datetime.datetime.strptime(meta[x][:19], "%Y:%m:%d %H:%M:%S")
-        except Exception:
-            pass
-    return datetime.datetime.today()
 
 
 def main():
@@ -65,7 +48,7 @@ def main():
     for meta in srclist:
         try:
             src_fn = utils.true_enc(os.path.normpath(meta['SourceFile']))
-            src_dt = datetimeFromMeta(meta)
+            src_dt = utils.datetimeFromMeta(meta, exif_params=EXIF_PARAMS)
 
             folder_name = src_dt.strftime(options.directory_template)
 
@@ -97,12 +80,12 @@ def main():
                 shutil.move(src_fn, dst_fn)
                 print u"{src} -> {dst}".format(src=src_fn, dst=dst_fn)
 
-            try:
-                os.rmdir(os.path.dirname(src_fn))
-            except OSError:
-                pass
+                try:
+                    os.rmdir(os.path.dirname(src_fn))
+                except OSError:
+                    pass
 
-            os.utime(dst_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
+                os.utime(dst_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
 
         except Exception as e:
             print utils.uni(e.message)
