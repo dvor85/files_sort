@@ -1,4 +1,5 @@
 eclipse.preferences.version=1
-encoding/foto_sort.py=utf-8
+encoding/fn2exif.py=utf-8
+encoding/fsort.py=utf-8
 encoding/utils.py=utf-8
-encoding/videoconv.py=utf-8
+encoding/vconv.py=utf-8

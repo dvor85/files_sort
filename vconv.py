@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 import subprocess
@@ -17,9 +18,9 @@ EXIF_PARAMS = ('DateTimeOriginal', 'CreateDate', 'ModifyDate', 'FileModifyDate',
 
 
 def create_parser():
-    parser = argparse.ArgumentParser(prog='foto_sort.py', add_help=True)
+    parser = argparse.ArgumentParser(prog='vconv.py', add_help=True)
     parser.add_argument('src_path',
-                        help='Source path')
+                        help='Source path template')
     parser.add_argument('dst_path',
                         help='Destination path')
     parser.add_argument('--exiftool', '-e',
@@ -35,34 +36,38 @@ def main():
     parser = create_parser()
     options = parser.parse_args()
 
-    src_dir = utils.true_enc(options.src_path)
-    dst_dir = utils.true_enc(options.dst_path)
-
-    if os.path.isdir(src_dir):
-        os.makedirs(dst_dir)
+    src_path = utils.true_enc(options.src_path)
+    dst_path = utils.true_enc(options.dst_path)
 
     with tempfile.NamedTemporaryFile() as tmp:
         subprocess.call(utils.fs_enc(
             u'"{exiftool}" -charset filename={charset} -q -m -fast -json -r "{path}"'.format(
                 exif_params=" ".join(['-%s' % x for x in EXIF_PARAMS]),
                 exiftool=utils.true_enc(options.exiftool),
-                path=src_dir,
+                path=src_path,
                 charset=locale.getpreferredencoding())), stdout=tmp)
         tmp.seek(0)
         srclist = json.load(tmp)
     for meta in srclist:
         try:
             src_fn = utils.true_enc(os.path.normpath(meta['SourceFile']))
-            if os.path.isdir(src_dir):
-                dst_fn = os.path.join(dst_dir, os.path.basename(src_fn))
+            if os.path.isdir(src_path):
+                dst_fn = os.path.join(dst_path, os.path.basename(src_fn))
             else:
-                dst_fn = dst_dir
+                dst_fn = dst_path
+
+            dst_fn = "%s.mp4" % os.path.splitext(dst_fn)[0]
+
             print u"convert {src} -> {dst}".format(src=src_fn, dst=dst_fn)
+            try:
+                os.makedirs(os.path.dirname(dst_fn))
+            except OSError:
+                pass
 
             src_dt = utils.datetimeFromMeta(meta, exif_params=EXIF_PARAMS)
 
             vcodec = "libx264 -b:v 5000k" if options.recode else "copy"
-            subprocess.call(utils.fs_enc(u'"{ffmpeg}" -threads auto -i "{src}" -c:v {vcodec} -c:a copy \
+            subprocess.call(utils.fs_enc(u'"{ffmpeg}" -loglevel error -threads auto -i "{src}" -c:v {vcodec} -c:a copy \
                                                                 -metadata creation_time="{cdate}" {dst}"'.format(
                 ffmpeg=utils.true_enc(options.ffmpeg),
                 vcodec=vcodec,
@@ -72,7 +77,7 @@ def main():
             )
 
             subprocess.call(utils.fs_enc(
-                u'"{exiftool}" -charset filename={charset} -overwrite_original -q -m -fast \
+                u'"{exiftool}" -charset filename={charset} -overwrite_original -p -q -m -fast \
                                                                 -tagsfromfile "{src}" "{dst}"'.format(
                     exiftool=utils.true_enc(options.exiftool),
                     src=src_fn,

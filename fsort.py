@@ -1,4 +1,6 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
+
 
 import os
 import shutil
@@ -15,11 +17,11 @@ except ImportError:
 
 
 def create_parser():
-    parser = argparse.ArgumentParser(prog='foto_sort.py', add_help=True)
-    parser.add_argument('dir',
-                        help='DIRECTORY for process')
-    parser.add_argument('--directory-template', '-t',
-                        help='Create directories with TEMPLATE. Default="%%Y-%%m"', default='%Y-%m')
+    parser = argparse.ArgumentParser(prog='fsort.py', add_help=True)
+    parser.add_argument('src_path',
+                        help='Source path template')
+    parser.add_argument('--directory-template', '-d',
+                        help='Create directories with TEMPLATE. Default="%%Y-%%m"', default="%Y-%m")
     parser.add_argument('--filename-template', '-f',
                         help='Filename TEMPLATE. Default="%%Y-%%m-%%d_%%H-%%M-%%S"', default="%Y-%m-%d_%H-%M-%S")
     parser.add_argument('--exiftool', '-e',
@@ -34,14 +36,14 @@ def main():
     parser = create_parser()
     options = parser.parse_args()
 
-    path = utils.true_enc(options.dir)
+    src_path = utils.true_enc(options.src_path)
     with tempfile.NamedTemporaryFile() as tmp:
         subprocess.call(utils.fs_enc(
             u'"{exiftool}" -charset filename={charset} -q -m -fast \
              -json -r "{path}"'.format(
                 exif_params=" ".join(['-%s' % x for x in EXIF_PARAMS]),
                 exiftool=utils.true_enc(options.exiftool),
-                path=path,
+                path=src_path,
                 charset=locale.getpreferredencoding())), stdout=tmp)
         tmp.seek(0)
         srclist = json.load(tmp)
@@ -57,11 +59,14 @@ def main():
             else:
                 new_fn = os.path.basename(src_fn)
 
-            dst_dir = os.path.join(path, folder_name)
+            if os.path.isdir(src_path):
+                dst_dir = os.path.join(src_path, folder_name)
+            else:
+                dst_dir = os.path.join(os.path.dirname(src_path), folder_name)
 
             try:
                 os.mkdir(dst_dir)
-            except Exception:
+            except OSError:
                 pass
 
             dst_fn = os.path.normpath(os.path.join(dst_dir, new_fn))
