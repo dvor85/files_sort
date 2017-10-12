@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import os
 import argparse
 import subprocess
 import utils
 import locale
-import datetime
+import re
+
+__re_filename = re.compile(ur'(?P<Y>\d{4})[\s_-]*(?P<m>\d{2})[\s_-]*(?P<d>\d{2})[\s_-]*(?P<H>\d{2})[\s_-]*(?P<M>\d{2})[\s_-]*(?P<S>\d{2})',
+                           re.UNICODE | re.LOCALE)
 
 
 def create_parser():
@@ -27,16 +29,24 @@ def main():
     srclist = utils.rListFiles(src_path)
     for src_fn in srclist:
         try:
-            src_sdt = os.path.splitext(os.path.basename(src_fn))[0]
-            src_dt = datetime.datetime.strptime(src_sdt, "%Y%m%d_%H%M%S")
-            print u"set alldates={cdate} of {src}".format(src=src_fn, cdate=src_dt.strftime("%Y:%m:%d %H:%M:%S"))
-            subprocess.call(utils.fs_enc(
-                u'"{exiftool}" -charset filename={charset} -overwrite_original -p -q -m -fast -alldates="{cdate}" "{src}"'.format(
-                    exiftool=utils.true_enc(options.exiftool),
-                    src=utils.true_enc(src_fn),
-                    cdate=src_dt.strftime("%Y:%m:%d %H:%M:%S"),
-                    charset=locale.getpreferredencoding()))
-            )
+            fn_m = __re_filename.search(src_fn)
+            if fn_m:
+                cdate = "{Y}:{m}:{d} {H}:{M}:{S}".format(
+                    Y=fn_m.group('Y'),
+                    m=fn_m.group('m'),
+                    d=fn_m.group('d'),
+                    H=fn_m.group('H'),
+                    M=fn_m.group('M'),
+                    S=fn_m.group('S'),
+                )
+                print u"set alldates={cdate} of {src}".format(src=src_fn, cdate=cdate)
+                subprocess.call(utils.fs_enc(
+                    u'"{exiftool}" -charset filename={charset} -overwrite_original -q -m -fast -alldates="{cdate}" "{src}"'.format(
+                        exiftool=utils.true_enc(options.exiftool),
+                        src=utils.true_enc(src_fn),
+                        cdate=cdate,
+                        charset=locale.getpreferredencoding()))
+                )
         except Exception as e:
             print utils.uni(e)
 

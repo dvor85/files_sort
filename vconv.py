@@ -27,8 +27,10 @@ def create_parser():
                         help='Path to exiftool', default='exiftool')
     parser.add_argument('--ffmpeg', '-f',
                         help='Path to ffmpeg', default='ffmpeg')
+    parser.add_argument('--bitrate', '-b',
+                        help='libx264 bitrate', default='5000k')
     parser.add_argument('--recode', '-r', action="store_true",
-                        help='If set, then recode with "libx264, bitrate 5000k", else only copy')
+                        help='If set, then recode with libx264 and bitrate BITRATE, else only copy')
     return parser
 
 
@@ -51,7 +53,7 @@ def main():
     for meta in srclist:
         try:
             src_fn = utils.true_enc(os.path.normpath(meta['SourceFile']))
-            if os.path.isdir(src_path):
+            if os.path.isdir(src_path) or os.path.isdir(dst_path):
                 dst_fn = os.path.join(dst_path, os.path.basename(src_fn))
             else:
                 dst_fn = dst_path
@@ -66,7 +68,7 @@ def main():
 
             src_dt = utils.datetimeFromMeta(meta, exif_params=EXIF_PARAMS)
 
-            vcodec = "libx264 -b:v 5000k" if options.recode else "copy"
+            vcodec = "libx264 -b:v {bitrate}".format(bitrate=options.bitrate) if options.recode else "copy"
             subprocess.call(utils.fs_enc(u'"{ffmpeg}" -loglevel error -threads auto -i "{src}" -c:v {vcodec} -c:a copy \
                                                                 -metadata creation_time="{cdate}" {dst}"'.format(
                 ffmpeg=utils.true_enc(options.ffmpeg),
@@ -77,7 +79,7 @@ def main():
             )
 
             subprocess.call(utils.fs_enc(
-                u'"{exiftool}" -charset filename={charset} -overwrite_original -p -q -m -fast \
+                u'"{exiftool}" -charset filename={charset} -overwrite_original -q -m -fast \
                                                                 -tagsfromfile "{src}" "{dst}"'.format(
                     exiftool=utils.true_enc(options.exiftool),
                     src=src_fn,
