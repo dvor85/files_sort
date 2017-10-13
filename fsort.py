@@ -36,7 +36,7 @@ def main():
     parser = create_parser()
     options = parser.parse_args()
 
-    src_path = utils.true_enc(options.src_path)
+    src_path = os.path.normpath(utils.true_enc(options.src_path))
     with tempfile.NamedTemporaryFile() as tmp:
         subprocess.call(utils.fs_enc(
             u'"{exiftool}" -charset filename={charset} -q -m -fast \

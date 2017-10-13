@@ -38,8 +38,8 @@ def main():
     parser = create_parser()
     options = parser.parse_args()
 
-    src_path = utils.true_enc(options.src_path)
-    dst_path = utils.true_enc(options.dst_path)
+    src_path = os.path.normpath(utils.true_enc(options.src_path))
+    dst_path = os.path.normpath(utils.true_enc(options.dst_path))
 
     with tempfile.NamedTemporaryFile() as tmp:
         subprocess.call(utils.fs_enc(
