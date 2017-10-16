@@ -8,6 +8,7 @@ import utils
 import locale
 import tempfile
 import argparse
+import shutil
 try:
     import simplejson as json
 except ImportError:
@@ -28,9 +29,11 @@ def create_parser():
     parser.add_argument('--ffmpeg', '-f',
                         help='Path to ffmpeg', default='ffmpeg')
     parser.add_argument('--bitrate', '-b',
-                        help='libx264 bitrate', default='5000k')
+                        help='Video bitrate', default='5000k')
     parser.add_argument('--recode', '-r', action="store_true",
-                        help='If set, then recode with libx264 and bitrate BITRATE, else only copy')
+                        help='If set, then recode with libx264 and bitrate BITRATE, else only copy.')
+    parser.add_argument('--overwrite', '-o', action="store_true",
+                        help='If set, then source file will be overwriten by converted file, independent of destination path.')
     return parser
 
 
@@ -58,7 +61,8 @@ def main():
             else:
                 dst_fn = dst_path
 
-            dst_fn = "%s.mp4" % os.path.splitext(dst_fn)[0]
+            dst_fn = u"{f}{overwrite}.mp4".format(f=os.path.splitext(dst_fn)[0],
+                                                  overwrite="_encoded_" if options.overwrite else "")
 
             print u"convert {src} -> {dst}".format(src=src_fn, dst=dst_fn)
             try:
@@ -69,8 +73,8 @@ def main():
             src_dt = utils.datetimeFromMeta(meta, exif_params=EXIF_PARAMS)
 
             vcodec = "libx264 -b:v {bitrate}".format(bitrate=options.bitrate) if options.recode else "copy"
-            subprocess.call(utils.fs_enc(u'"{ffmpeg}" -loglevel error -threads auto -i "{src}" -c:v {vcodec} -c:a copy \
-                                                                -metadata creation_time="{cdate}" {dst}"'.format(
+            subprocess.check_call(utils.fs_enc(u'"{ffmpeg}" -loglevel error -threads auto -i "{src}" -c:v {vcodec} -c:a copy \
+                                                                -metadata creation_time="{cdate}" "{dst}"'.format(
                 ffmpeg=utils.true_enc(options.ffmpeg),
                 vcodec=vcodec,
                 src=src_fn,
@@ -78,7 +82,7 @@ def main():
                 cdate=src_dt.strftime("%Y-%m-%d %H:%M:%S")))
             )
 
-            subprocess.call(utils.fs_enc(
+            subprocess.check_call(utils.fs_enc(
                 u'"{exiftool}" -charset filename={charset} -overwrite_original -q -m -fast \
                                                                 -tagsfromfile "{src}" "{dst}"'.format(
                     exiftool=utils.true_enc(options.exiftool),
@@ -88,6 +92,8 @@ def main():
             )
 
             os.utime(dst_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
+            if options.overwrite:
+                shutil.move(dst_fn, src_fn)
 
         except Exception as e:
             print utils.uni(e.message)
