@@ -9,10 +9,13 @@ import locale
 import tempfile
 import argparse
 import shutil
+import shlex
 try:
     import simplejson as json
 except ImportError:
     import json
+
+fmt = utils.fmt
 
 
 EXIF_PARAMS = ('DateTimeOriginal', 'CreateDate', 'ModifyDate', 'FileModifyDate', 'FileCreateDate')
@@ -45,12 +48,12 @@ def main():
     dst_path = os.path.normpath(utils.true_enc(options.dst_path))
 
     with tempfile.NamedTemporaryFile() as tmp:
-        subprocess.call(utils.fs_enc(
-            u'"{exiftool}" -charset filename={charset} -q -m -fast -json -r "{path}"'.format(
+        subprocess.call(shlex.split(utils.fs_enc(
+            fmt('"{exiftool}" -charset filename={charset} -q -m -fast -json -r "{path}"',
                 exif_params=" ".join(['-%s' % x for x in EXIF_PARAMS]),
                 exiftool=utils.true_enc(options.exiftool),
                 path=src_path,
-                charset=locale.getpreferredencoding())), stdout=tmp)
+                charset=locale.getpreferredencoding()))), stdout=tmp)
         tmp.seek(0)
         srclist = json.load(tmp)
     for meta in srclist:
@@ -61,10 +64,10 @@ def main():
             else:
                 dst_fn = dst_path
 
-            dst_fn = u"{f}{overwrite}.mp4".format(f=os.path.splitext(dst_fn)[0],
-                                                  overwrite="_encoded_" if options.overwrite else "")
+            dst_fn = fmt("{f}{overwrite}.mp4", f=os.path.splitext(dst_fn)[0],
+                         overwrite="_encoded_" if options.overwrite else "")
 
-            print u"convert {src} -> {dst}".format(src=src_fn, dst=dst_fn)
+            print fmt("convert {src} -> {dst}", src=src_fn, dst=dst_fn)
             try:
                 os.makedirs(os.path.dirname(dst_fn))
             except OSError:
@@ -73,22 +76,22 @@ def main():
             src_dt = utils.datetimeFromMeta(meta, exif_params=EXIF_PARAMS)
 
             vcodec = "libx264 -b:v {bitrate}".format(bitrate=options.bitrate) if options.recode else "copy"
-            subprocess.check_call(utils.fs_enc(u'"{ffmpeg}" -loglevel error -threads auto -i "{src}" -c:v {vcodec} -c:a copy \
-                                                                -metadata creation_time="{cdate}" "{dst}"'.format(
-                ffmpeg=utils.true_enc(options.ffmpeg),
-                vcodec=vcodec,
-                src=src_fn,
-                dst=dst_fn,
-                cdate=src_dt.strftime("%Y-%m-%d %H:%M:%S")))
-            )
+            subprocess.check_call(shlex.split(utils.fs_enc(fmt('"{ffmpeg}" -loglevel error -threads auto -i "{src}" -c:v {vcodec} -c:a copy \
+                                                                -metadata creation_time="{cdate}" "{dst}"',
+                                                               ffmpeg=utils.true_enc(options.ffmpeg),
+                                                               vcodec=vcodec,
+                                                               src=src_fn,
+                                                               dst=dst_fn,
+                                                               cdate=src_dt.strftime("%Y-%m-%d %H:%M:%S"))))
+                                  )
 
-            subprocess.check_call(utils.fs_enc(
-                u'"{exiftool}" -charset filename={charset} -overwrite_original -q -m -fast \
-                                                                -tagsfromfile "{src}" "{dst}"'.format(
+            subprocess.check_call(shlex.split(utils.fs_enc(
+                fmt('"{exiftool}" -charset filename={charset} -overwrite_original -q -m -fast \
+                                                                -tagsfromfile "{src}" "{dst}"',
                     exiftool=utils.true_enc(options.exiftool),
                     src=src_fn,
                     dst=dst_fn,
-                    charset=locale.getpreferredencoding()))
+                    charset=locale.getpreferredencoding())))
             )
 
             os.utime(dst_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))

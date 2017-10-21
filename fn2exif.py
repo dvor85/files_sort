@@ -9,6 +9,9 @@ import os
 import datetime
 import time
 import re
+import shlex
+
+fmt = utils.fmt
 
 __re_filename = re.compile(
     ur'(?P<Y>\d{4})[\s_.-]*(?P<m>\d{2})[\s_.-]*(?P<d>\d{2})[\s_.-]*(?P<H>\d{2})[\s_.-]*(?P<M>\d{2})[\s_.-]*(?P<S>\d{2})',
@@ -43,13 +46,13 @@ def main():
                     M=fn_m.group('M'),
                     S=fn_m.group('S'),
                 ), "%Y%m%d%H%M%S")
-                print u"set alldates={cdate} of {src}".format(src=src_fn, cdate=src_dt.strftime("%Y:%m:%d %H:%M:%S"))
-                subprocess.check_call(utils.fs_enc(
-                    u'"{exiftool}" -charset filename={charset} -overwrite_original -q -m -fast -alldates="{cdate}" "{src}"'.format(
+                print fmt("set alldates={cdate} of {src}", src=src_fn, cdate=src_dt.strftime("%Y:%m:%d %H:%M:%S"))
+                subprocess.check_call(shlex.split(utils.fs_enc(
+                    fmt('"{exiftool}" -charset filename={charset} -overwrite_original -q -m -fast -alldates="{cdate}" "{src}"',
                         exiftool=utils.true_enc(options.exiftool),
                         src=utils.true_enc(src_fn),
                         cdate=src_dt.strftime("%Y:%m:%d %H:%M:%S"),
-                        charset=locale.getpreferredencoding()))
+                        charset=locale.getpreferredencoding())))
                 )
                 os.utime(src_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
         except Exception as e:

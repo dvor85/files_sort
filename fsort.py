@@ -10,10 +10,13 @@ import argparse
 import subprocess
 import tempfile
 import locale
+import shlex
 try:
     import simplejson as json
 except ImportError:
     import json
+
+fmt = utils.fmt
 
 
 def create_parser():
@@ -38,13 +41,13 @@ def main():
 
     src_path = os.path.normpath(utils.true_enc(options.src_path))
     with tempfile.NamedTemporaryFile() as tmp:
-        subprocess.call(utils.fs_enc(
-            u'"{exiftool}" -charset filename={charset} -q -m -fast \
-             -json -r "{path}"'.format(
+        subprocess.call(shlex.split(utils.fs_enc(
+            fmt('"{exiftool}" -charset filename={charset} -q -m -fast \
+             -json -r "{path}"',
                 exif_params=" ".join(['-%s' % x for x in EXIF_PARAMS]),
                 exiftool=utils.true_enc(options.exiftool),
                 path=src_path,
-                charset=locale.getpreferredencoding())), stdout=tmp)
+                charset=locale.getpreferredencoding()))), stdout=tmp)
         tmp.seek(0)
         srclist = json.load(tmp)
     for meta in srclist:
@@ -55,7 +58,7 @@ def main():
             folder_name = src_dt.strftime(options.directory_template)
 
             if len(options.filename_template) > 0:
-                new_fn = u"{dt}{ext}".format(dt=src_dt.strftime(options.filename_template), ext=os.path.splitext(src_fn)[1])
+                new_fn = fmt("{dt}{ext}", dt=src_dt.strftime(options.filename_template), ext=os.path.splitext(src_fn)[1])
             else:
                 new_fn = os.path.basename(src_fn)
 
@@ -80,10 +83,10 @@ def main():
                     os.unlink(dst_fn)
                 else:
                     i += 1
-                    dst_fn = u"{fn}-{i}{ext}".format(fn=split_fn[0], i=i, ext=split_fn[1])
+                    dst_fn = fmt("{fn}-{i}{ext}", fn=split_fn[0], i=i, ext=split_fn[1])
             else:
                 shutil.move(src_fn, dst_fn)
-                print u"{src} -> {dst}".format(src=src_fn, dst=dst_fn)
+                print fmt("{src} -> {dst}", src=src_fn, dst=dst_fn)
 
                 try:
                     os.rmdir(os.path.dirname(src_fn))
