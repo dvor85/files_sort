@@ -8,6 +8,7 @@ from UserDict import UserDict
 import datetime
 import re
 import string
+import fnmatch
 
 
 __re_denied = re.compile(ur'[^./\wА-яЁё-]|[./]{2}', re.UNICODE | re.LOCALE)
@@ -124,13 +125,17 @@ def uniq(seq):
     return noDupes
 
 
-def rListFiles(path):
+def rListFiles(path, _pattern='*.*'):
     files = []
-    for f in os.listdir(path):
-        if os.path.isdir(os.path.join(path, f)):
-            files += rListFiles(os.path.join(path, f))
-        else:
-            files.append(os.path.join(path, f))
+    if not os.path.isdir(path):
+        pattern = os.path.basename(path)
+        files += rListFiles(os.path.dirname(path), pattern)
+    else:
+        for f in os.listdir(path):
+            if os.path.isdir(os.path.join(path, f)):
+                files += rListFiles(os.path.join(path, f), _pattern)
+            elif fnmatch.fnmatch(f, _pattern):
+                files.append(os.path.join(path, f))
     return files
 
 
