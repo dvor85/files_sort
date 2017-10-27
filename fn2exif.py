@@ -10,6 +10,8 @@ import datetime
 import time
 import re
 import shlex
+import threading
+import psutil
 
 fmt = utils.fmt
 
@@ -28,15 +30,17 @@ def create_parser():
     return parser
 
 
-def main():
-    parser = create_parser()
-    options = parser.parse_args()
+class setTagsThread(threading.Thread):
+    def __init__(self, src_fn, exiftool, msema):
+        threading.Thread.__init__(self)
+        self.daemon = False
+        self.src_fn = src_fn
+        self.exiftool = utils.true_enc(exiftool)
+        self.msema = msema
 
-    src_path = os.path.normpath(utils.true_enc(options.path))
-    srclist = utils.rListFiles(src_path)
-    for src_fn in srclist:
+    def run(self):
         try:
-            fn_m = __re_filename.search(utils.uni(src_fn))
+            fn_m = __re_filename.search(utils.uni(self.src_fn))
             if fn_m:
                 src_dt = datetime.datetime.strptime("{Y}{m}{d}{H}{M}{S}".format(
                     Y=fn_m.group('Y'),
@@ -46,17 +50,35 @@ def main():
                     M=fn_m.group('M'),
                     S=fn_m.group('S'),
                 ), "%Y%m%d%H%M%S")
-                print fmt("set alldates={cdate} of {src}", src=src_fn, cdate=src_dt.strftime("%Y:%m:%d %H:%M:%S"))
+                print fmt("set alldates={cdate} of {src}", src=self.src_fn, cdate=src_dt.strftime("%Y:%m:%d %H:%M:%S"))
                 subprocess.check_call(shlex.split(utils.fs_enc(
                     fmt('"{exiftool}" -charset filename={charset} -overwrite_original -q -m -fast -alldates="{cdate}" "{src}"',
-                        exiftool=utils.true_enc(options.exiftool),
-                        src=utils.true_enc(src_fn),
+                        exiftool=self.exiftool,
+                        src=utils.true_enc(self.src_fn),
                         cdate=src_dt.strftime("%Y:%m:%d %H:%M:%S"),
                         charset=locale.getpreferredencoding())))
                 )
-                os.utime(src_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
+                os.utime(self.src_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
         except Exception as e:
-            print utils.uni(e)
+            print fmt("{fn}: {e}", fn=self.src_fn, e=e)
+        finally:
+            self.msema.release()
+
+
+def main():
+    parser = create_parser()
+    options = parser.parse_args()
+
+    Msema = threading.Semaphore(psutil.cpu_count())
+    src_path = os.path.normpath(utils.true_enc(options.path))
+    srclist = utils.rListFiles(src_path)
+    for src_fn in srclist:
+        try:
+            Msema.acquire()
+            setTagsThread(src_fn, options.exiftool, Msema).start()
+        except Exception as e:
+            Msema.release()
+            print utils.uni(e.message)
 
 
 if __name__ == '__main__':
