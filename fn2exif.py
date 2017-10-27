@@ -36,7 +36,7 @@ def main():
     srclist = utils.rListFiles(src_path)
     for src_fn in srclist:
         try:
-            fn_m = __re_filename.search(src_fn)
+            fn_m = __re_filename.search(utils.uni(src_fn))
             if fn_m:
                 src_dt = datetime.datetime.strptime("{Y}{m}{d}{H}{M}{S}".format(
                     Y=fn_m.group('Y'),

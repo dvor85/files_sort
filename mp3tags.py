@@ -8,6 +8,7 @@ import argparse
 import eyed3
 import threading
 import time
+import re
 
 fmt = utils.fmt
 
@@ -16,6 +17,8 @@ API_KEY = 'b25b959554ed76058ac220b7b2e0a026'
 URL = 'http://ws.audioscrobbler.com/2.0/'
 TAG_COMMENT = u"Fetched from last.fm by mp3tags"
 PARAMS = {'api_key': API_KEY, 'format': 'json'}
+
+_re_filename = re.compile(ur'(?P<artist>.*?)[\s_]*-+[\s_]*(?P<title>.*)',  re.UNICODE | re.LOCALE)
 
 
 LFM_ERRORS = {
@@ -209,15 +212,29 @@ class setTagsThread(threading.Thread):
     def run(self):
         try:
             afile = eyed3.load(utils.uni(self.src_fn))
+            if not afile.tag:
+                afile.initTag()
             comment = afile.tag.comments
             if comment.get(u'') and comment.get(u'').text == TAG_COMMENT:
                 return
             title = afile.tag.title
+            artist = afile.tag.artist
             if not title:
-                afile.initTag()
-                title = os.path.splitext(os.path.basename(self.src_fn))[0]
+                fn = utils.uni(os.path.splitext(os.path.basename(self.src_fn))[0].replace('_', ' '))
+                title = ' '.join(f for f in fn.split(' ') if utils.str2num(f) == 0)
+                artist = ''
+#                 art_title = _re_filename.search(fn)
+#                 if art_title:
+#                     title = art_title.group('title')
+#                     if not artist:
+#                         artist = art_title.group('artist')
+#                 elif artist:
+#                     fns = ' '.join(f for f in fn.split(' ') if utils.str2num(f) == 0)
+#                     title = fns
+#                 else:
+#                     raise ValueError(fmt('{fn}: Not enough of required parameters', fn=self.src_fn))
 
-            info = trackGetInfo(title, afile.tag.artist, sema=self.sema)
+            info = trackGetInfo(title, artist, sema=self.sema)
             with self.print_lock:
                 print(fmt("{0:-^100s}", "-"))
                 print(self.src_fn)
@@ -244,7 +261,6 @@ class setTagsThread(threading.Thread):
                 comment.set(TAG_COMMENT, u'')
 
             afile.tag.save(encoding='utf8')
-
         except Exception as e:
             print(utils.true_enc(e.message))
 
