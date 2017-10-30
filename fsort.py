@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-
+from __future__ import unicode_literals
 import os
 import shutil
 import utils
@@ -39,20 +39,20 @@ def main():
     parser = create_parser()
     options = parser.parse_args()
 
-    src_path = os.path.normpath(utils.true_enc(options.src_path))
+    src_path = os.path.normpath(utils.uni(options.src_path))
     with tempfile.NamedTemporaryFile() as tmp:
         subprocess.call(shlex.split(utils.fs_enc(
             fmt('"{exiftool}" -charset filename={charset} -q -m -fast \
              -json -r "{path}"',
                 exif_params=" ".join(['-%s' % x for x in EXIF_PARAMS]),
-                exiftool=utils.true_enc(options.exiftool),
+                exiftool=utils.uni(options.exiftool),
                 path=src_path,
                 charset=locale.getpreferredencoding()))), stdout=tmp)
         tmp.seek(0)
         srclist = json.load(tmp)
     for meta in srclist:
         try:
-            src_fn = utils.true_enc(os.path.normpath(meta['SourceFile']))
+            src_fn = utils.uni(os.path.normpath(meta['SourceFile']))
             src_dt = utils.datetimeFromMeta(meta, exif_params=EXIF_PARAMS)
 
             folder_name = src_dt.strftime(options.directory_template)

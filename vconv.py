@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from __future__ import unicode_literals
 import subprocess
 import os
 import time
@@ -44,21 +45,21 @@ def main():
     parser = create_parser()
     options = parser.parse_args()
 
-    src_path = os.path.normpath(utils.true_enc(options.src_path))
-    dst_path = os.path.normpath(utils.true_enc(options.dst_path))
+    src_path = os.path.normpath(utils.uni(options.src_path))
+    dst_path = os.path.normpath(utils.uni(options.dst_path))
 
     with tempfile.NamedTemporaryFile() as tmp:
         subprocess.call(shlex.split(utils.fs_enc(
             fmt('"{exiftool}" -charset filename={charset} -q -m -fast -json -r "{path}"',
                 exif_params=" ".join(['-%s' % x for x in EXIF_PARAMS]),
-                exiftool=utils.true_enc(options.exiftool),
+                exiftool=utils.uni(options.exiftool),
                 path=src_path,
                 charset=locale.getpreferredencoding()))), stdout=tmp)
         tmp.seek(0)
         srclist = json.load(tmp)
     for meta in srclist:
         try:
-            src_fn = utils.true_enc(os.path.normpath(meta['SourceFile']))
+            src_fn = utils.uni(os.path.normpath(meta['SourceFile']))
             if os.path.isdir(src_path) or os.path.isdir(dst_path):
                 dst_fn = os.path.join(dst_path, os.path.basename(src_fn))
             else:
@@ -78,7 +79,7 @@ def main():
             vcodec = "libx264 -b:v {bitrate}".format(bitrate=options.bitrate) if options.recode else "copy"
             subprocess.check_call(shlex.split(utils.fs_enc(fmt('"{ffmpeg}" -loglevel error -threads auto -i "{src}" -c:v {vcodec} -c:a copy \
                                                                 -metadata creation_time="{cdate}" "{dst}"',
-                                                               ffmpeg=utils.true_enc(options.ffmpeg),
+                                                               ffmpeg=utils.uni(options.ffmpeg),
                                                                vcodec=vcodec,
                                                                src=src_fn,
                                                                dst=dst_fn,
@@ -88,7 +89,7 @@ def main():
             subprocess.check_call(shlex.split(utils.fs_enc(
                 fmt('"{exiftool}" -charset filename={charset} -overwrite_original -q -m -fast \
                                                                 -tagsfromfile "{src}" "{dst}"',
-                    exiftool=utils.true_enc(options.exiftool),
+                    exiftool=utils.uni(options.exiftool),
                     src=src_fn,
                     dst=dst_fn,
                     charset=locale.getpreferredencoding())))

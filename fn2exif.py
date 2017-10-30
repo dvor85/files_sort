@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+from __future__ import unicode_literals
 
 import argparse
 import subprocess
@@ -15,7 +16,7 @@ import psutil
 
 fmt = utils.fmt
 
-__re_filename = re.compile(
+_re_filename = re.compile(
     ur'(?P<Y>\d{4})[\s_.-]*(?P<m>\d{2})[\s_.-]*(?P<d>\d{2})[\s_.-]*(?P<H>\d{2})[\s_.-]*(?P<M>\d{2})[\s_.-]*(?P<S>\d{2})',
     re.UNICODE | re.LOCALE)
 
@@ -34,13 +35,13 @@ class setTagsThread(threading.Thread):
     def __init__(self, src_fn, exiftool, msema):
         threading.Thread.__init__(self)
         self.daemon = False
-        self.src_fn = src_fn
-        self.exiftool = utils.true_enc(exiftool)
+        self.src_fn = utils.uni(src_fn)
+        self.exiftool = utils.uni(exiftool)
         self.msema = msema
 
     def run(self):
         try:
-            fn_m = __re_filename.search(utils.uni(self.src_fn))
+            fn_m = _re_filename.search(self.src_fn)
             if fn_m:
                 src_dt = datetime.datetime.strptime("{Y}{m}{d}{H}{M}{S}".format(
                     Y=fn_m.group('Y'),
@@ -54,7 +55,7 @@ class setTagsThread(threading.Thread):
                 subprocess.check_call(shlex.split(utils.fs_enc(
                     fmt('"{exiftool}" -charset filename={charset} -overwrite_original -q -m -fast -alldates="{cdate}" "{src}"',
                         exiftool=self.exiftool,
-                        src=utils.true_enc(self.src_fn),
+                        src=self.src_fn,
                         cdate=src_dt.strftime("%Y:%m:%d %H:%M:%S"),
                         charset=locale.getpreferredencoding())))
                 )
@@ -70,7 +71,7 @@ def main():
     options = parser.parse_args()
 
     Msema = threading.Semaphore(psutil.cpu_count())
-    src_path = os.path.normpath(utils.true_enc(options.path))
+    src_path = os.path.normpath(utils.uni(options.path))
     srclist = utils.rListFiles(src_path)
     for src_fn in srclist:
         try:

@@ -49,7 +49,7 @@ def request(url, method='get', params=None, sema=None, **kwargs):
 
 
 def _strip(s):
-    return _re_strip.sub('', s)
+    return _re_strip.sub('', s).strip()
 
 
 class LastFM():
