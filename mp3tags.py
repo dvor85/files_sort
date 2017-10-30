@@ -16,7 +16,7 @@ fmt = utils.fmt
 
 
 _re_filename = re.compile(r'(?P<artist>.*?)[\s_]*-+[\s_]*(?P<title>.*)',  re.UNICODE | re.LOCALE)
-_re_strip = re.compile(r'\(.*?\)',  re.UNICODE | re.LOCALE)
+_re_strip = re.compile(r'\(.*?\)|\d+|&',  re.UNICODE | re.LOCALE)
 
 
 def create_parser():
@@ -98,6 +98,7 @@ class LastFM():
         self.sema = sema
         self.url = url
         self.api_key = api_key
+        self.artist_info = {}
 
     def getBestImageOf(self, info):
         try:
@@ -115,6 +116,9 @@ class LastFM():
     def artistGetInfo(self, artist):
         if not artist:
             raise ValueError('Artist not set')
+        if artist in self.artist_info:
+            return self.artist_info[artist]
+
         params = dict(
             api_key=self.api_key,
             format='json',
@@ -126,11 +130,12 @@ class LastFM():
         if info.get('error'):
             raise ValueError(fmt("{msg}: {desc}", msg=info.get('message'), desc=LastFM.ERRORS[info['error']]))
 
-        return dict(artist=info['artist']['name'],
-                    image=self.getBestImageOf(info['artist']),
-                    genres=self.getGenres(info['artist']['tags']))
+        self.artist_info[artist] = dict(artist=info['artist']['name'],
+                                        image=self.getBestImageOf(info['artist']),
+                                        genres=self.getGenres(info['artist']['tags']))
+        return self.artist_info[artist]
 
-    def trackSearch(self, title, artist=None):
+    def trackSearch(self, title, artist=''):
         if not title:
             raise ValueError('Title not set')
         params = dict(
@@ -158,7 +163,7 @@ class LastFM():
         return dict(artist=tracks[0]['artist'],
                     title=tracks[0]['name'])
 
-    def trackGetInfo(self, title, artist=None):
+    def trackGetInfo(self, title, artist=''):
         if not title:
             raise ValueError('Title not set')
         params = dict(
@@ -203,6 +208,7 @@ class TimeLimitedSemaphore(threading._Semaphore):
 
 class setTagsThread(threading.Thread):
     TAG_COMMENT = r"Fetched from last.fm by mp3tags"
+    ID3_DEFAULT_VERSION = (2, 4, 0)
 
     def __init__(self, src_fn, tsema, msema):
         threading.Thread.__init__(self)
@@ -211,14 +217,17 @@ class setTagsThread(threading.Thread):
         self.sema = tsema
         self.msema = msema
 
-    def getInfo(self, title, artist=None):
+    def getInfo(self, title, artist=''):
         lfm = LastFM.get_instance(sema=self.sema)
-        if not artist:
-            ts = lfm.trackSearch(title, artist)
-            artist = ts['artist']
-            title = ts['title']
+        info = dict(title=title, artist=artist)
 
-        info = lfm.trackGetInfo(title, artist)
+        if not info['artist']:
+            info.update(lfm.trackSearch(title, artist))
+
+        try:
+            info.update(lfm.trackGetInfo(title, artist))
+        except Exception as e:
+            info.update(lfm.artistGetInfo(artist))
 
         if not info['album']:
             info.update(lfm.artistGetInfo(artist))
@@ -238,7 +247,7 @@ class setTagsThread(threading.Thread):
             return dict(title=art_title.group('title'),
                         artist=art_title.group('artist'))
         else:
-            return dict(title=' '.join(f for f in fn.split(' ') if utils.str2num(f) == 0),
+            return dict(title=fn,
                         artist='')
 
     def run(self):
@@ -252,23 +261,21 @@ class setTagsThread(threading.Thread):
             if comment.get('') and comment.get('').text == setTagsThread.TAG_COMMENT:
                 return
 
-            title = afile.tag.title
-            artist = afile.tag.artist
-            if not title:
-                fi = self.getInfoFromFilename()
-                artist = fi['artist']
-                title = fi['title']
+            info = dict(title=afile.tag.title,
+                        artist=afile.tag.artist)
+            if not info['title']:
+                info.update(self.getInfoFromFilename())
             try:
-                info = self.getInfo(title, artist)
+                info.update(self.getInfo(info['title'], info['artist']))
             except Exception as e:
-                info = self.getInfoFromFilename()
                 print fmt("{fn}: {a} - {t}", fn=self.src_fn, a=info['artist'], t=info['title'])
 
             afile.tag.artist = utils.uni(info.get('artist', ''))
+            afile.tag.album_artist = afile.tag.artist
             afile.tag.title = utils.uni(info.get('title', ''))
-            afile.tag.album = utils.uni(info.get('album', ''))
+            afile.tag.album = utils.uni(info.get('album', afile.tag.artist))
 
-            for g in info.get('genres'):
+            for g in info.get('genres', []):
                 try:
                     afile.tag.genre = utils.uni(g)
                     if afile.tag.genre.id is not None:
@@ -283,7 +290,7 @@ class setTagsThread(threading.Thread):
 
             comment.set(setTagsThread.TAG_COMMENT, '')
 
-            afile.tag.save(encoding='utf8')
+            afile.tag.save(version=setTagsThread.ID3_DEFAULT_VERSION, encoding='utf8')
         except Exception as e:
             print fmt("{fn}: {e}", fn=self.src_fn, e=e)
         finally:
