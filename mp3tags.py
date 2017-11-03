@@ -11,6 +11,7 @@ import threading
 import time
 import re
 import psutil
+import chardet
 
 fmt = utils.fmt
 
@@ -50,6 +51,14 @@ def request(url, method='get', params=None, sema=None, **kwargs):
 
 def _strip(s):
     return _re_strip.sub('', s).strip()
+
+
+def unicode2bytestring(string):
+    try:
+        string = b''.join([chr(ord(i)) for i in string])
+    except ValueError:
+        pass    # unicode fails chr(ord()) conversion
+    return string
 
 
 class LastFM():
@@ -108,7 +117,8 @@ class LastFM():
                         r = request(im['#text'], sema=self.sema)
                         return {'img_data': r.content, 'mime_type': r.headers['Content-Type']}
         except Exception:
-            return {'img_data': None, 'mime_type': None}
+            pass
+        return {'img_data': None, 'mime_type': None}
 
     def getGenres(self, info):
         return [g['name'] for g in info['tag']]
@@ -229,12 +239,12 @@ class setTagsThread(threading.Thread):
         except Exception as e:
             info.update(lfm.artistGetInfo(artist))
 
-        if not info['album']:
+        if not info.get('album'):
             info.update(lfm.artistGetInfo(artist))
         elif not info['image']['img_data']:
             ainfo = lfm.artistGetInfo(artist)
             info['image'] = ainfo['image']
-        elif not info['genres']:
+        elif not info.get('genres'):
             ainfo = lfm.artistGetInfo(artist)
             info['genres'] = ainfo['genres']
 
@@ -250,6 +260,18 @@ class setTagsThread(threading.Thread):
             return dict(title=fn,
                         artist='')
 
+    def getBestEncoding(self, info):
+        res = {'confidence': 0, 'encoding': None}
+        for v in info.itervalues():
+            if not isinstance(v, unicode):
+                stat = chardet.detect(v)
+                if stat['confidence'] > res['confidence']:
+                    res.update(stat)
+        return res['encoding']
+
+    def thread_done(self):
+        self.msema.release()
+
     def run(self):
         try:
             afile = eyed3.load(self.src_fn)
@@ -261,8 +283,15 @@ class setTagsThread(threading.Thread):
             if comment.get('') and comment.get('').text == setTagsThread.TAG_COMMENT:
                 return
 
-            info = dict(title=afile.tag.title,
-                        artist=afile.tag.artist)
+            info = dict(title=unicode2bytestring(_strip(afile.tag.title)),
+                        artist=unicode2bytestring(_strip(afile.tag.artist)))
+
+            encoding = self.getBestEncoding(info)
+            if encoding:
+                for k, v in info.iteritems():
+                    if not isinstance(v, unicode):
+                        info[k] = v.decode(encoding, errors='ignore')
+
             if not info['title']:
                 info.update(self.getInfoFromFilename())
             try:
@@ -273,7 +302,7 @@ class setTagsThread(threading.Thread):
             afile.tag.artist = utils.uni(info.get('artist', ''))
             afile.tag.album_artist = afile.tag.artist
             afile.tag.title = utils.uni(info.get('title', ''))
-            afile.tag.album = utils.uni(info.get('album', afile.tag.artist))
+            afile.tag.album = utils.uni(info.get('album')) if info.get('album') else afile.tag.artist
 
             for g in info.get('genres', []):
                 try:
@@ -294,7 +323,7 @@ class setTagsThread(threading.Thread):
         except Exception as e:
             print fmt("{fn}: {e}", fn=self.src_fn, e=e)
         finally:
-            self.msema.release()
+            self.thread_done()
 
 
 def main():

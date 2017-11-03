@@ -127,6 +127,7 @@ def uniq(seq):
 
 def rListFiles(path, _pattern='*.*'):
     files = []
+    path = os.path.abspath(os.path.normpath(path))
     if not os.path.isdir(path):
         pattern = os.path.basename(path)
         files += rListFiles(os.path.dirname(path), pattern)
