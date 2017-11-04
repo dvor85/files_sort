@@ -4,7 +4,6 @@ from __future__ import unicode_literals
 
 import argparse
 import subprocess
-import utils
 import locale
 import os
 import datetime
@@ -13,8 +12,7 @@ import re
 import shlex
 import threading
 import psutil
-
-fmt = utils.fmt
+from utils import *
 
 _re_filename = re.compile(
     ur'(?P<Y>\d{4})[\s_.-]*(?P<m>\d{2})[\s_.-]*(?P<d>\d{2})[\s_.-]*(?P<H>\d{2})[\s_.-]*(?P<M>\d{2})[\s_.-]*(?P<S>\d{2})',
@@ -35,8 +33,8 @@ class setTagsThread(threading.Thread):
     def __init__(self, src_fn, exiftool, msema):
         threading.Thread.__init__(self)
         self.daemon = False
-        self.src_fn = utils.uni(src_fn)
-        self.exiftool = utils.uni(exiftool)
+        self.src_fn = uni(src_fn)
+        self.exiftool = uni(exiftool)
         self.msema = msema
 
     def run(self):
@@ -52,7 +50,7 @@ class setTagsThread(threading.Thread):
                     S=fn_m.group('S'),
                 ), "%Y%m%d%H%M%S")
                 print fmt("set alldates={cdate} of {src}", src=self.src_fn, cdate=src_dt.strftime("%Y:%m:%d %H:%M:%S"))
-                subprocess.check_call(shlex.split(utils.fs_enc(
+                subprocess.check_call(shlex.split(fs_enc(
                     fmt('"{exiftool}" -charset filename={charset} -overwrite_original -q -m -fast -alldates="{cdate}" "{src}"',
                         exiftool=self.exiftool,
                         src=self.src_fn,
@@ -71,15 +69,15 @@ def main():
     options = parser.parse_args()
 
     Msema = threading.Semaphore(psutil.cpu_count())
-    src_path = os.path.normpath(utils.uni(options.path))
-    srclist = utils.rListFiles(src_path)
+    src_path = uni(options.path)
+    srclist = rListFiles(src_path)
     for src_fn in srclist:
         try:
             Msema.acquire()
             setTagsThread(src_fn, options.exiftool, Msema).start()
         except Exception as e:
             Msema.release()
-            print utils.uni(e.message)
+            print uni(e.message)
 
 
 if __name__ == '__main__':

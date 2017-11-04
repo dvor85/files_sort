@@ -4,19 +4,17 @@
 from __future__ import unicode_literals
 import os
 import shutil
-import utils
 import time
 import argparse
 import subprocess
 import tempfile
 import locale
 import shlex
+from utils import *
 try:
     import simplejson as json
 except ImportError:
     import json
-
-fmt = utils.fmt
 
 
 def create_parser():
@@ -39,21 +37,21 @@ def main():
     parser = create_parser()
     options = parser.parse_args()
 
-    src_path = os.path.normpath(utils.uni(options.src_path))
+    src_path = os.path.normpath(uni(options.src_path))
     with tempfile.NamedTemporaryFile() as tmp:
-        subprocess.call(shlex.split(utils.fs_enc(
+        subprocess.call(shlex.split(fs_enc(
             fmt('"{exiftool}" -charset filename={charset} -q -m -fast \
              -json -r "{path}"',
                 exif_params=" ".join(['-%s' % x for x in EXIF_PARAMS]),
-                exiftool=utils.uni(options.exiftool),
-                path=src_path,
+                exiftool=uni(options.exiftool),
+                s=src_path,
                 charset=locale.getpreferredencoding()))), stdout=tmp)
         tmp.seek(0)
         srclist = json.load(tmp)
     for meta in srclist:
         try:
-            src_fn = utils.uni(os.path.normpath(meta['SourceFile']))
-            src_dt = utils.datetimeFromMeta(meta, exif_params=EXIF_PARAMS)
+            src_fn = uni(os.path.normpath(meta['SourceFile']))
+            src_dt = datetimeFromMeta(meta, exif_params=EXIF_PARAMS)
 
             folder_name = src_dt.strftime(options.directory_template)
 
@@ -79,7 +77,7 @@ def main():
             while os.path.isfile(dst_fn):
                 if shutil._samefile(src_fn, dst_fn):
                     break
-                if os.path.getsize(src_fn) == os.path.getsize(dst_fn) and utils.md5sum(src_fn) == utils.md5sum(dst_fn):
+                if os.path.getsize(src_fn) == os.path.getsize(dst_fn) and md5sum(src_fn) == md5sum(dst_fn):
                     os.unlink(dst_fn)
                 else:
                     i += 1
@@ -96,7 +94,7 @@ def main():
                 os.utime(dst_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
 
         except Exception as e:
-            print utils.uni(e.message)
+            print uni(e.message)
 
 
 if __name__ == '__main__':

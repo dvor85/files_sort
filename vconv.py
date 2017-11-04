@@ -5,18 +5,16 @@ from __future__ import unicode_literals
 import subprocess
 import os
 import time
-import utils
 import locale
 import tempfile
 import argparse
 import shutil
 import shlex
+from utils import *
 try:
     import simplejson as json
 except ImportError:
     import json
-
-fmt = utils.fmt
 
 
 EXIF_PARAMS = ('DateTimeOriginal', 'CreateDate', 'ModifyDate', 'FileModifyDate', 'FileCreateDate')
@@ -45,21 +43,21 @@ def main():
     parser = create_parser()
     options = parser.parse_args()
 
-    src_path = os.path.normpath(utils.uni(options.src_path))
-    dst_path = os.path.normpath(utils.uni(options.dst_path))
+    src_path = os.path.normpath(uni(options.src_path))
+    dst_path = os.path.normpath(uni(options.dst_path))
 
     with tempfile.NamedTemporaryFile() as tmp:
-        subprocess.call(shlex.split(utils.fs_enc(
+        subprocess.call(shlex.split(fs_enc(
             fmt('"{exiftool}" -charset filename={charset} -q -m -fast -json -r "{path}"',
                 exif_params=" ".join(['-%s' % x for x in EXIF_PARAMS]),
-                exiftool=utils.uni(options.exiftool),
-                path=src_path,
+                exiftool=uni(options.exiftool),
+                s=src_path,
                 charset=locale.getpreferredencoding()))), stdout=tmp)
         tmp.seek(0)
         srclist = json.load(tmp)
     for meta in srclist:
         try:
-            src_fn = utils.uni(os.path.normpath(meta['SourceFile']))
+            src_fn = uni(os.path.normpath(meta['SourceFile']))
             if os.path.isdir(src_path) or os.path.isdir(dst_path):
                 dst_fn = os.path.join(dst_path, os.path.basename(src_fn))
             else:
@@ -74,22 +72,22 @@ def main():
             except OSError:
                 pass
 
-            src_dt = utils.datetimeFromMeta(meta, exif_params=EXIF_PARAMS)
+            src_dt = datetimeFromMeta(meta, exif_params=EXIF_PARAMS)
 
             vcodec = "libx264 -b:v {bitrate}".format(bitrate=options.bitrate) if options.recode else "copy"
-            subprocess.check_call(shlex.split(utils.fs_enc(fmt('"{ffmpeg}" -loglevel error -threads auto -i "{src}" -c:v {vcodec} -c:a copy \
+            subprocess.check_call(shlex.split(fs_enc(fmt('"{ffmpeg}" -loglevel error -threads auto -i "{src}" -c:v {vcodec} -c:a copy \
                                                                 -metadata creation_time="{cdate}" "{dst}"',
-                                                               ffmpeg=utils.uni(options.ffmpeg),
-                                                               vcodec=vcodec,
-                                                               src=src_fn,
-                                                               dst=dst_fn,
-                                                               cdate=src_dt.strftime("%Y-%m-%d %H:%M:%S"))))
+                                                         ffmpeg=uni(options.ffmpeg),
+                                                         vcodec=vcodec,
+                                                         src=src_fn,
+                                                         dst=dst_fn,
+                                                         cdate=src_dt.strftime("%Y-%m-%d %H:%M:%S"))))
                                   )
 
-            subprocess.check_call(shlex.split(utils.fs_enc(
+            subprocess.check_call(shlex.split(fs_enc(
                 fmt('"{exiftool}" -charset filename={charset} -overwrite_original -q -m -fast \
                                                                 -tagsfromfile "{src}" "{dst}"',
-                    exiftool=utils.uni(options.exiftool),
+                    exiftool=uni(options.exiftool),
                     src=src_fn,
                     dst=dst_fn,
                     charset=locale.getpreferredencoding())))
@@ -100,7 +98,7 @@ def main():
                 shutil.move(dst_fn, src_fn)
 
         except Exception as e:
-            print utils.uni(e.message)
+            print uni(e.message)
 
 
 if __name__ == '__main__':

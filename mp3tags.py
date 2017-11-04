@@ -4,7 +4,6 @@
 from __future__ import unicode_literals
 import requests
 import os
-import utils
 import argparse
 import eyed3
 import threading
@@ -12,8 +11,7 @@ import time
 import re
 import psutil
 import chardet
-
-fmt = utils.fmt
+from utils import *
 
 
 _re_filename = re.compile(r'(?P<artist>.*?)[\s_]*-+[\s_]*(?P<title>.*)',  re.UNICODE | re.LOCALE)
@@ -160,13 +158,13 @@ class LastFM():
         ts = r.json()
         if ts.get('error'):
             raise ValueError(fmt("{msg}: {desc}", msg=ts.get('message'), desc=LastFM.ERRORS[ts['error']]))
-        if utils.str2int(ts['results']["opensearch:totalResults"]) == 0:
+        if str2int(ts['results']["opensearch:totalResults"]) == 0:
             raise ValueError('No tracks found')
 
         tracks = ts['results']['trackmatches']['track']
         if artist:
             for track in tracks:
-                if utils.lower(track['artist']) in utils.lower(artist):
+                if lower(track['artist']) in lower(artist):
                     return dict(artist=track['artist'],
                                 title=track['name'])
 
@@ -269,7 +267,7 @@ class setTagsThread(threading.Thread):
                     res.update(stat)
         return res['encoding']
 
-    def thread_done(self):
+    def done(self):
         self.msema.release()
 
     def run(self):
@@ -289,8 +287,7 @@ class setTagsThread(threading.Thread):
             encoding = self.getBestEncoding(info)
             if encoding:
                 for k, v in info.iteritems():
-                    if not isinstance(v, unicode):
-                        info[k] = v.decode(encoding, errors='ignore')
+                    info[k] = uni(v, encoding)
 
             if not info['title']:
                 info.update(self.getInfoFromFilename())
@@ -299,14 +296,14 @@ class setTagsThread(threading.Thread):
             except Exception as e:
                 print fmt("{fn}: {a} - {t}", fn=self.src_fn, a=info['artist'], t=info['title'])
 
-            afile.tag.artist = utils.uni(info.get('artist', ''))
+            afile.tag.artist = info.get('artist', '')
             afile.tag.album_artist = afile.tag.artist
-            afile.tag.title = utils.uni(info.get('title', ''))
-            afile.tag.album = utils.uni(info.get('album')) if info.get('album') else afile.tag.artist
+            afile.tag.title = info.get('title', '')
+            afile.tag.album = info.get('album') if info.get('album') else afile.tag.artist
 
             for g in info.get('genres', []):
                 try:
-                    afile.tag.genre = utils.uni(g)
+                    afile.tag.genre = g
                     if afile.tag.genre.id is not None:
                         break
                 except Exception:
@@ -323,7 +320,7 @@ class setTagsThread(threading.Thread):
         except Exception as e:
             print fmt("{fn}: {e}", fn=self.src_fn, e=e)
         finally:
-            self.thread_done()
+            self.done()
 
 
 def main():
@@ -332,8 +329,8 @@ def main():
 
     eyed3.log.setLevel("ERROR")
 
-    src_path = os.path.normpath(utils.uni(options.src_path))
-    srclist = utils.rListFiles(src_path)
+    src_path = uni(options.src_path)
+    srclist = rListFiles(src_path)
 
     Tsema = TimeLimitedSemaphore(5, 1)
     Msema = threading.Semaphore(psutil.cpu_count())
@@ -341,11 +338,11 @@ def main():
     for f in srclist:
         try:
             Msema.acquire()
-            src_fn = utils.uni(os.path.normpath(f))
+            src_fn = uni(os.path.normpath(f))
             setTagsThread(src_fn, Tsema, Msema).start()
         except Exception as e:
             Msema.release()
-            print(utils.uni(e.message))
+            print(uni(e.message))
 
 
 if __name__ == '__main__':
