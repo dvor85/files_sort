@@ -19,22 +19,13 @@ _re_filename = re.compile(
     re.UNICODE | re.LOCALE)
 
 
-def create_parser():
-    parser = argparse.ArgumentParser(prog='fn2exif.py', add_help=True)
-    parser.add_argument('path',
-                        help='Source path')
-    parser.add_argument('--exiftool', '-e',
-                        help='Path to exiftool', default='exiftool')
-
-    return parser
-
-
 class setTagsThread(threading.Thread):
-    def __init__(self, src_fn, exiftool, msema):
+    def __init__(self, src_fn, msema):
         threading.Thread.__init__(self)
         self.daemon = False
+        self.options = Options.get_instance()()
         self.src_fn = uni(src_fn)
-        self.exiftool = uni(exiftool)
+        self.exiftool = uni(self.options.exiftool)
         self.msema = msema
 
     def run(self):
@@ -64,9 +55,32 @@ class setTagsThread(threading.Thread):
             self.msema.release()
 
 
+class Options():
+    _instance = None
+    _lock = threading.Lock()
+
+    @staticmethod
+    def get_instance():
+        if Options._instance is None:
+            with Options._lock:
+                Options._instance = Options()
+        return Options._instance
+
+    def __init__(self):
+        parser = argparse.ArgumentParser(prog='fn2exif.py', add_help=True)
+        parser.add_argument('path',
+                            help='Source path')
+        parser.add_argument('--exiftool', '-e',
+                            help='Path to exiftool', default='exiftool')
+
+        self.options = parser.parse_args()
+
+    def __call__(self):
+        return self.options
+
+
 def main():
-    parser = create_parser()
-    options = parser.parse_args()
+    options = Options.get_instance()()
 
     Msema = threading.Semaphore(psutil.cpu_count())
     src_path = uni(options.path)
@@ -74,7 +88,7 @@ def main():
     for src_fn in srclist:
         try:
             Msema.acquire()
-            setTagsThread(src_fn, options.exiftool, Msema).start()
+            setTagsThread(src_fn, Msema).start()
         except Exception as e:
             Msema.release()
             print uni(e.message)

@@ -18,13 +18,6 @@ _re_filename = re.compile(r'(?P<artist>.*?)[\s_]*-+[\s_]*(?P<title>.*)',  re.UNI
 _re_strip = re.compile(r'\(.*?\)|\d+|&',  re.UNICODE | re.LOCALE)
 
 
-def create_parser():
-    parser = argparse.ArgumentParser(prog='mp3tags.py', add_help=True)
-    parser.add_argument('src_path',
-                        help='Source path template')
-    return parser
-
-
 def request(url, method='get', params=None, sema=None, **kwargs):
     if sema:
         sema.acquire()
@@ -48,7 +41,7 @@ def request(url, method='get', params=None, sema=None, **kwargs):
 
 
 def _strip(s):
-    return _re_strip.sub('', s).strip()
+    return _re_strip.sub('', s).strip() if s else ''
 
 
 def unicode2bytestring(string):
@@ -224,6 +217,7 @@ class setTagsThread(threading.Thread):
         self.src_fn = src_fn
         self.sema = tsema
         self.msema = msema
+        self.options = Options.get_instance()()
 
     def getInfo(self, title, artist=''):
         lfm = LastFM.get_instance(sema=self.sema)
@@ -259,13 +253,18 @@ class setTagsThread(threading.Thread):
                         artist='')
 
     def getBestEncoding(self, info):
-        res = {'confidence': 0, 'encoding': None}
+        detector = chardet.UniversalDetector()
         for v in info.itervalues():
-            if not isinstance(v, unicode):
-                stat = chardet.detect(v)
-                if stat['confidence'] > res['confidence']:
-                    res.update(stat)
-        return res['encoding']
+            if not detector.done:
+                if isinstance(v, str):
+                    detector.feed(v)
+        detector.close()
+        stat = detector.result
+
+        if stat['confidence'] > 0.9:
+            return stat['encoding']
+        else:
+            return self.options.alternative_encoding
 
     def done(self):
         self.msema.release()
@@ -278,16 +277,18 @@ class setTagsThread(threading.Thread):
             if not afile.tag:
                 afile.initTag()
             comment = afile.tag.comments
+            if self.options.force:
+                comment.remove('')
             if comment.get('') and comment.get('').text == setTagsThread.TAG_COMMENT:
                 return
 
             info = dict(title=unicode2bytestring(_strip(afile.tag.title)),
                         artist=unicode2bytestring(_strip(afile.tag.artist)))
 
-            encoding = self.getBestEncoding(info)
-            if encoding:
+#             encoding = self.getBestEncoding(info)
+            if self.options.alternative_encoding:
                 for k, v in info.iteritems():
-                    info[k] = uni(v, encoding)
+                    info[k] = uni(v, self.options.alternative_encoding)
 
             if not info['title']:
                 info.update(self.getInfoFromFilename())
@@ -323,10 +324,34 @@ class setTagsThread(threading.Thread):
             self.done()
 
 
-def main():
-    parser = create_parser()
-    options = parser.parse_args()
+class Options():
+    _instance = None
+    _lock = threading.Lock()
 
+    @staticmethod
+    def get_instance():
+        if Options._instance is None:
+            with Options._lock:
+                Options._instance = Options()
+        return Options._instance
+
+    def __init__(self):
+        parser = argparse.ArgumentParser(prog='mp3tags.py', add_help=True)
+        parser.add_argument('src_path',
+                            help='Source path template')
+        parser.add_argument('--force', '-f', action='store_true',
+                            help='Force set tags')
+        parser.add_argument('--alternative-encoding', '-e', default='windows-1251',
+                            help='Alternative encoding of tags, if autodetect is failed. DEFAULT: windows-1251')
+
+        self.options = parser.parse_args()
+
+    def __call__(self):
+        return self.options
+
+
+def main():
+    options = Options.get_instance()()
     eyed3.log.setLevel("ERROR")
 
     src_path = uni(options.src_path)

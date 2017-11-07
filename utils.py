@@ -194,12 +194,16 @@ def get_encoding(s):
     if isinstance(s, str):
         try:
             import chardet
-            encoding = chardet.detect(s)['encoding']
+            stat = chardet.detect(s)
+            if stat['confidence'] >= 0.99:
+                encoding = stat['encoding']
+            else:
+                raise ValueError('Confidence less then 0.99')
         except Exception:
             encoding = locale.getpreferredencoding()
             if encoding is None:
                 encoding = sys.getfilesystemencoding()
-            else:
+            if encoding is None:
                 raise ValueError("Can't determine encoding")
     return encoding
 

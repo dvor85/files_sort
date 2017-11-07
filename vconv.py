@@ -11,6 +11,7 @@ import argparse
 import shutil
 import shlex
 from utils import *
+import threading
 try:
     import simplejson as json
 except ImportError:
@@ -20,28 +21,42 @@ except ImportError:
 EXIF_PARAMS = ('DateTimeOriginal', 'CreateDate', 'ModifyDate', 'FileModifyDate', 'FileCreateDate')
 
 
-def create_parser():
-    parser = argparse.ArgumentParser(prog='vconv.py', add_help=True)
-    parser.add_argument('src_path',
-                        help='Source path template')
-    parser.add_argument('dst_path',
-                        help='Destination path')
-    parser.add_argument('--exiftool', '-e',
-                        help='Path to exiftool', default='exiftool')
-    parser.add_argument('--ffmpeg', '-f',
-                        help='Path to ffmpeg', default='ffmpeg')
-    parser.add_argument('--bitrate', '-b',
-                        help='Video bitrate', default='5000k')
-    parser.add_argument('--recode', '-r', action="store_true",
-                        help='If set, then recode with libx264 and bitrate BITRATE, else only copy.')
-    parser.add_argument('--overwrite', '-o', action="store_true",
-                        help='If set, then source file will be overwriten by converted file, independent of destination path.')
-    return parser
+class Options():
+    _instance = None
+    _lock = threading.Lock()
+
+    @staticmethod
+    def get_instance():
+        if Options._instance is None:
+            with Options._lock:
+                Options._instance = Options()
+        return Options._instance
+
+    def __init__(self):
+        parser = argparse.ArgumentParser(prog='vconv.py', add_help=True)
+        parser.add_argument('src_path',
+                            help='Source path template')
+        parser.add_argument('dst_path',
+                            help='Destination path')
+        parser.add_argument('--exiftool', '-e',
+                            help='Path to exiftool', default='exiftool')
+        parser.add_argument('--ffmpeg', '-f',
+                            help='Path to ffmpeg', default='ffmpeg')
+        parser.add_argument('--bitrate', '-b',
+                            help='Video bitrate', default='5000k')
+        parser.add_argument('--recode', '-r', action="store_true",
+                            help='If set, then recode with libx264 and bitrate BITRATE, else only copy.')
+        parser.add_argument('--overwrite', '-o', action="store_true",
+                            help='If set, then source file will be overwriten by converted file, independent of destination path.')
+
+        self.options = parser.parse_args()
+
+    def __call__(self):
+        return self.options
 
 
 def main():
-    parser = create_parser()
-    options = parser.parse_args()
+    options = Options.get_instance()()
 
     src_path = os.path.normpath(uni(options.src_path))
     dst_path = os.path.normpath(uni(options.dst_path))

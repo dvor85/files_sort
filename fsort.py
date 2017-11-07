@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import locale
 import shlex
+import threading
 from utils import *
 try:
     import simplejson as json
@@ -17,25 +18,39 @@ except ImportError:
     import json
 
 
-def create_parser():
-    parser = argparse.ArgumentParser(prog='fsort.py', add_help=True)
-    parser.add_argument('src_path',
-                        help='Source path template')
-    parser.add_argument('--directory-template', '-d',
-                        help='Create directories with TEMPLATE. Default="%%Y-%%m"', default="%Y-%m")
-    parser.add_argument('--filename-template', '-f',
-                        help='Filename TEMPLATE. Default="%%Y-%%m-%%d_%%H-%%M-%%S"', default="%Y-%m-%d_%H-%M-%S")
-    parser.add_argument('--exiftool', '-e',
-                        help='Path to exiftool', default='exiftool')
-    return parser
+class Options():
+    _instance = None
+    _lock = threading.Lock()
+
+    @staticmethod
+    def get_instance():
+        if Options._instance is None:
+            with Options._lock:
+                Options._instance = Options()
+        return Options._instance
+
+    def __init__(self):
+        parser = argparse.ArgumentParser(prog='fsort.py', add_help=True)
+        parser.add_argument('src_path',
+                            help='Source path template')
+        parser.add_argument('--directory-template', '-d',
+                            help='Create directories with TEMPLATE. Default="%%Y-%%m"', default="%Y-%m")
+        parser.add_argument('--filename-template', '-f',
+                            help='Filename TEMPLATE. Default="%%Y-%%m-%%d_%%H-%%M-%%S"', default="%Y-%m-%d_%H-%M-%S")
+        parser.add_argument('--exiftool', '-e',
+                            help='Path to exiftool', default='exiftool')
+
+        self.options = parser.parse_args()
+
+    def __call__(self):
+        return self.options
 
 
 EXIF_PARAMS = ('DateTimeOriginal', 'CreateDate', 'ModifyDate', 'FileModifyDate', 'FileCreateDate')
 
 
 def main():
-    parser = create_parser()
-    options = parser.parse_args()
+    options = Options.get_instance()()
 
     src_path = os.path.normpath(uni(options.src_path))
     with tempfile.NamedTemporaryFile() as tmp:
