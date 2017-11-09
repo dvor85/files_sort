@@ -59,7 +59,7 @@ def main():
              -json -r "{path}"',
                 exif_params=" ".join(['-%s' % x for x in EXIF_PARAMS]),
                 exiftool=uni(options.exiftool),
-                s=src_path,
+                path=src_path,
                 charset=locale.getpreferredencoding()))), stdout=tmp)
         tmp.seek(0)
         srclist = json.load(tmp)
@@ -106,7 +106,7 @@ def main():
                 except OSError:
                     pass
 
-                os.utime(dst_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
+            os.utime(dst_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
 
         except Exception as e:
             print uni(e.message)
