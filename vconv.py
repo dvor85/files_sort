@@ -55,25 +55,34 @@ class Options():
         return self.options
 
 
+def isWebLink(s):
+    return '://' in s
+
+
 def main():
     options = Options.get_instance()()
-
-    src_path = os.path.normpath(uni(options.src_path))
+    src_path = uni(options.src_path)
     dst_path = os.path.normpath(uni(options.dst_path))
 
-    with tempfile.NamedTemporaryFile() as tmp:
-        subprocess.call(shlex.split(fs_enc(
-            fmt('"{exiftool}" -charset filename={charset} -q -m -fast -json -r "{path}"',
-                exif_params=" ".join(['-%s' % x for x in EXIF_PARAMS]),
-                exiftool=uni(options.exiftool),
-                s=src_path,
-                charset=locale.getpreferredencoding()))), stdout=tmp)
-        tmp.seek(0)
-        srclist = json.load(tmp)
+    if not isWebLink(src_path):
+        src_path = os.path.normpath(src_path)
+
+        with tempfile.NamedTemporaryFile() as tmp:
+            subprocess.call(shlex.split(fs_enc(
+                fmt('"{exiftool}" -charset filename={charset} -q -m -fast -json -r "{path}"',
+                    exif_params=" ".join(['-%s' % x for x in EXIF_PARAMS]),
+                    exiftool=uni(options.exiftool),
+                    s=src_path,
+                    charset=locale.getpreferredencoding()))), stdout=tmp)
+            tmp.seek(0)
+            srclist = json.load(tmp)
+    else:
+        options.overwrite = False
+        srclist = {'SourceFile': src_path}
     for meta in srclist:
         try:
-            src_fn = uni(os.path.normpath(meta['SourceFile']))
-            if os.path.isdir(src_path) or os.path.isdir(dst_path):
+            src_fn = uni(os.path.normpath(meta['SourceFile'])) if not isWebLink(meta['SourceFile']) else meta['SourceFile']
+            if not isWebLink(src_fn) and (os.path.isdir(src_path) or os.path.isdir(dst_path)):
                 dst_fn = os.path.join(dst_path, os.path.basename(src_fn))
             else:
                 dst_fn = dst_path
@@ -99,14 +108,15 @@ def main():
                                                          cdate=src_dt.strftime("%Y-%m-%d %H:%M:%S"))))
                                   )
 
-            subprocess.check_call(shlex.split(fs_enc(
-                fmt('"{exiftool}" -charset filename={charset} -overwrite_original -q -m -fast \
-                                                                -tagsfromfile "{src}" "{dst}"',
-                    exiftool=uni(options.exiftool),
-                    src=src_fn,
-                    dst=dst_fn,
-                    charset=locale.getpreferredencoding())))
-            )
+            if not isWebLink(src_fn):
+                subprocess.check_call(shlex.split(fs_enc(
+                    fmt('"{exiftool}" -charset filename={charset} -overwrite_original -q -m -fast \
+                                                                    -tagsfromfile "{src}" "{dst}"',
+                        exiftool=uni(options.exiftool),
+                        src=src_fn,
+                        dst=dst_fn,
+                        charset=locale.getpreferredencoding())))
+                )
 
             os.utime(dst_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
             if options.overwrite:
