@@ -15,29 +15,23 @@ from utils import *
 
 
 _re_filename = re.compile(r'(?P<artist>.*?)[\s_]*-+[\s_]*(?P<title>.*)',  re.UNICODE | re.LOCALE)
-_re_strip = re.compile(r'\(.*?\)|\d+|&',  re.UNICODE | re.LOCALE)
+_re_strip = re.compile(r'[(\[].*?[)\]]|\d+|&|\^.+|\.+$|[^\s]{1}\.',  re.UNICODE | re.LOCALE)
 
 
-def request(url, method='get', params=None, sema=None, **kwargs):
-    if sema:
-        sema.acquire()
-    try:
-        params_str = "?" + "&".join((fmt("{0}={1}", *i)
-                                     for i in params.iteritems())) if params is not None and method == 'get' else ""
-#         print(fmt("{t} | {u}{p}", u=url, p=params_str, t=time.time()))
-        if not url:
-            return
-        kwargs.setdefault('allow_redirects', True)
-        kwargs.setdefault('headers', {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) \
-                Chrome/45.0.2454.99 Safari/537.36'})
-        kwargs.setdefault('timeout', 10)
+def request(url, method='get', params=None, **kwargs):
+    params_str = "?" + "&".join(("{k}={v}".format(k=uni(k), v=uni(v))
+                                 for k, v in params.iteritems())) if params and method == 'get' else ""
+#     print(fmt("{t} | {u}{p}", u=url, p=params_str, t=time.time()))
+    if not url:
+        return
+    kwargs.setdefault('allow_redirects', True)
+    kwargs.setdefault('headers', {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) \
+            Chrome/45.0.2454.99 Safari/537.36'})
+    kwargs.setdefault('timeout', 10)
 
-        r = requests.request(method, url, params=params, **kwargs)
-        r.raise_for_status()
-        return r
-    finally:
-        if sema:
-            sema.release()
+    r = requests.request(method, url, params=params, **kwargs)
+    r.raise_for_status()
+    return r
 
 
 def _strip(s):
@@ -50,6 +44,26 @@ def unicode2bytestring(string):
     except ValueError:
         pass    # unicode fails chr(ord()) conversion
     return string
+
+
+class TimeLimitedSemaphore(threading._Semaphore):
+    def __init__(self, value=1, perseconds=1, verbose=None):
+        threading._Semaphore.__init__(self, value=value, verbose=verbose)
+        self._perseconds = perseconds
+        self._time = 0
+
+    def acquire(self, blocking=1):
+        rc = threading._Semaphore.acquire(self, blocking)
+        if self._Semaphore__value == 0:
+            self._time = time.time()
+        dt = time.time() - self._time
+        if dt < self._perseconds:
+            if blocking:
+                time.sleep(self._perseconds - dt)
+
+        return rc
+
+    __enter__ = acquire
 
 
 class LastFM():
@@ -86,18 +100,22 @@ class LastFM():
 
     _instance = None
     _lock = threading.Lock()
+    _sema = TimeLimitedSemaphore(5, 1)
+
+    _API_KEY = 'b25b959554ed76058ac220b7b2e0a026'
+    _URL = 'http://ws.audioscrobbler.com/2.0/'
+#     _URL = 'http://alpha.libre.fm/2.0/'
 
     @staticmethod
-    def get_instance(url='http://ws.audioscrobbler.com/2.0/', api_key='b25b959554ed76058ac220b7b2e0a026', sema=None):
+    def get_instance():
         if LastFM._instance is None:
             with LastFM._lock:
-                LastFM._instance = LastFM(url, api_key, sema)
+                LastFM._instance = LastFM()
         return LastFM._instance
 
-    def __init__(self, url='http://ws.audioscrobbler.com/2.0/', api_key='b25b959554ed76058ac220b7b2e0a026', sema=None):
-        self.sema = sema
-        self.url = url
-        self.api_key = api_key
+    def __init__(self):
+        self.url = LastFM._URL
+        self.api_key = LastFM._API_KEY
         self.artist_info = {}
 
     def getBestImageOf(self, info):
@@ -105,7 +123,8 @@ class LastFM():
             for im in info['image']:
                 if im['size'] == 'extralarge':
                     if im['#text'] != '':
-                        r = request(im['#text'], sema=self.sema)
+                        with LastFM._sema:
+                            r = request(im['#text'])
                         return {'img_data': r.content, 'mime_type': r.headers['Content-Type']}
         except Exception:
             pass
@@ -125,8 +144,8 @@ class LastFM():
             format='json',
             artist=artist,
             method='artist.getinfo')
-
-        r = request(self.url, params=params, sema=self.sema)
+        with LastFM._sema:
+            r = request(self.url, params=params)
         info = r.json()
         if info.get('error'):
             raise ValueError(fmt("{msg}: {desc}", msg=info.get('message'), desc=LastFM.ERRORS[info['error']]))
@@ -147,7 +166,8 @@ class LastFM():
             method='track.search',
             limit=10)
 
-        r = request(self.url, params=params, sema=self.sema)
+        with LastFM._sema:
+            r = request(self.url, params=params)
         ts = r.json()
         if ts.get('error'):
             raise ValueError(fmt("{msg}: {desc}", msg=ts.get('message'), desc=LastFM.ERRORS[ts['error']]))
@@ -175,7 +195,8 @@ class LastFM():
             method='track.getinfo',
             autocorrect=1)
 
-        r = request(self.url, params=params, sema=self.sema)
+        with LastFM._sema:
+            r = request(self.url, params=params)
         info = r.json()
 
         if info.get('error'):
@@ -189,38 +210,19 @@ class LastFM():
             image=self.getBestImageOf(info['track'].get('album')))
 
 
-class TimeLimitedSemaphore(threading._Semaphore):
-    def __init__(self, value=1, perseconds=1, verbose=None):
-        threading._Semaphore.__init__(self, value=value, verbose=verbose)
-        self._perseconds = perseconds
-        self._time = 0
-
-    def acquire(self, blocking=1):
-        rc = threading._Semaphore.acquire(self, blocking)
-        if self._Semaphore__value == 0:
-            self._time = time.time()
-        dt = time.time() - self._time
-        if dt < self._perseconds:
-            if blocking:
-                time.sleep(self._perseconds - dt)
-
-        return rc
-
-
 class setTagsThread(threading.Thread):
     TAG_COMMENT = r"Fetched from last.fm by mp3tags"
     ID3_DEFAULT_VERSION = (2, 4, 0)
 
-    def __init__(self, src_fn, tsema, msema):
+    def __init__(self, src_fn, msema):
         threading.Thread.__init__(self)
         self.daemon = False
         self.src_fn = src_fn
-        self.sema = tsema
         self.msema = msema
         self.options = Options.get_instance()()
 
     def getInfo(self, title, artist=''):
-        lfm = LastFM.get_instance(sema=self.sema)
+        lfm = LastFM.get_instance()
         info = dict(title=title, artist=artist)
 
         if not info['artist']:
@@ -233,12 +235,14 @@ class setTagsThread(threading.Thread):
 
         if not info.get('album'):
             info.update(lfm.artistGetInfo(artist))
-        elif not info['image']['img_data']:
+        if not info['image']['img_data']:
             ainfo = lfm.artistGetInfo(artist)
             info['image'] = ainfo['image']
-        elif not info.get('genres'):
+            info['artist'] = ainfo['artist']
+        if not info.get('genres'):
             ainfo = lfm.artistGetInfo(artist)
             info['genres'] = ainfo['genres']
+            info['artist'] = ainfo['artist']
 
         return info
 
@@ -357,14 +361,13 @@ def main():
     src_path = uni(options.src_path)
     srclist = rListFiles(src_path)
 
-    Tsema = TimeLimitedSemaphore(5, 1)
     Msema = threading.Semaphore(psutil.cpu_count())
 
     for f in srclist:
         try:
             Msema.acquire()
             src_fn = uni(os.path.normpath(f))
-            setTagsThread(src_fn, Tsema, Msema).start()
+            setTagsThread(src_fn, Msema).start()
         except Exception as e:
             Msema.release()
             print(uni(e.message))
