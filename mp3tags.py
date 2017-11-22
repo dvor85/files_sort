@@ -6,16 +6,16 @@ import requests
 import os
 import argparse
 import eyed3
+from eyed3 import id3
 import threading
 import time
 import re
 import psutil
-import chardet
 from utils import *
 
 
 _re_filename = re.compile(r'(?P<artist>.*?)[\s_]*-+[\s_]*(?P<title>.*)',  re.UNICODE | re.LOCALE)
-_re_strip = re.compile(r'[(\[].*?[)\]]|\d+|&|\^.+|\.+$|[^\s]{1}\.',  re.UNICODE | re.LOCALE)
+_re_strip = re.compile(r'[\(\[].*?[\)\]]|^\d+[\.\s\-]*|\.+$|[^\s]{1}\.',  re.UNICODE | re.LOCALE)
 
 
 def request(url, method='get', params=None, **kwargs):
@@ -57,9 +57,8 @@ class TimeLimitedSemaphore(threading._Semaphore):
         if self._Semaphore__value == 0:
             self._time = time.time()
         dt = time.time() - self._time
-        if dt < self._perseconds:
-            if blocking:
-                time.sleep(self._perseconds - dt)
+        if blocking and dt < self._perseconds:
+            time.sleep(self._perseconds - dt)
 
         return rc
 
@@ -133,16 +132,16 @@ class LastFM():
     def getGenres(self, info):
         return [g['name'] for g in info['tag']]
 
-    def artistGetInfo(self, artist):
-        if not artist:
+    def artistGetInfo(self, **kwargs):
+        if not kwargs.get('artist'):
             raise ValueError('Artist not set')
-        if artist in self.artist_info:
-            return self.artist_info[artist]
+        if kwargs['artist'] in self.artist_info:
+            return self.artist_info[kwargs['artist']]
 
         params = dict(
             api_key=self.api_key,
             format='json',
-            artist=artist,
+            artist=kwargs['artist'],
             method='artist.getinfo')
         with LastFM._sema:
             r = request(self.url, params=params)
@@ -150,19 +149,23 @@ class LastFM():
         if info.get('error'):
             raise ValueError(fmt("{msg}: {desc}", msg=info.get('message'), desc=LastFM.ERRORS[info['error']]))
 
-        self.artist_info[artist] = dict(artist=info['artist']['name'],
-                                        image=self.getBestImageOf(info['artist']),
-                                        genres=self.getGenres(info['artist']['tags']))
-        return self.artist_info[artist]
+        image = self.getBestImageOf(info['artist'])
+        if not image['img_data']:
+            image = kwargs['image']
 
-    def trackSearch(self, title, artist=''):
-        if not title:
+        self.artist_info[kwargs['artist']] = dict(artist=info['artist']['name'],
+                                                  image=image,
+                                                  genres=self.getGenres(info['artist']['tags']))
+        return self.artist_info[kwargs['artist']]
+
+    def trackSearch(self, **kwargs):
+        if not kwargs.get('title'):
             raise ValueError('Title not set')
         params = dict(
             api_key=self.api_key,
             format='json',
-            track=title,
-            artist=artist if artist else '',
+            track=kwargs['title'],
+            artist=kwargs['artist'],
             method='track.search',
             limit=10)
 
@@ -175,23 +178,23 @@ class LastFM():
             raise ValueError('No tracks found')
 
         tracks = ts['results']['trackmatches']['track']
-        if artist:
+        if kwargs.get('artist'):
             for track in tracks:
-                if lower(track['artist']) in lower(artist):
+                if lower(track['artist']) in lower(kwargs['artist']):
                     return dict(artist=track['artist'],
                                 title=track['name'])
 
         return dict(artist=tracks[0]['artist'],
                     title=tracks[0]['name'])
 
-    def trackGetInfo(self, title, artist=''):
-        if not title:
+    def trackGetInfo(self, **kwargs):
+        if not kwargs.get('title'):
             raise ValueError('Title not set')
         params = dict(
             api_key=self.api_key,
             format='json',
-            artist=artist,
-            track=title,
+            artist=kwargs['artist'],
+            track=kwargs['title'],
             method='track.getinfo',
             autocorrect=1)
 
@@ -202,17 +205,23 @@ class LastFM():
         if info.get('error'):
             raise ValueError(fmt("{msg}: {desc}", msg=info.get('message'), desc=LastFM.ERRORS[info['error']]))
 
-        return dict(
+        res = dict(
             artist=info['track']['artist']['name'],
             title=info['track']['name'],
-            album=info['track']['album']['title'] if 'album' in info['track'] else '',
-            genres=self.getGenres(info['track']['toptags']),
-            image=self.getBestImageOf(info['track'].get('album')))
+            genres=self.getGenres(info['track']['toptags']),)
+
+        if 'album' in info['track']:
+            res['album'] = info['track']['album']['title']
+            res['album_artist'] = info['track']['album']['artist']
+        res['image'] = self.getBestImageOf(info['track'].get('album'))
+        if not res['image']['img_data']:
+            res['image'] = kwargs['image']
+
+        return res
 
 
 class setTagsThread(threading.Thread):
     TAG_COMMENT = r"Fetched from last.fm by mp3tags"
-    ID3_DEFAULT_VERSION = (2, 4, 0)
 
     def __init__(self, src_fn, msema):
         threading.Thread.__init__(self)
@@ -221,26 +230,39 @@ class setTagsThread(threading.Thread):
         self.msema = msema
         self.options = Options.get_instance()()
 
-    def getInfo(self, title, artist=''):
+    def get_local_cover(self):
+        names = ['cover', 'poster', 'album', 'front', 'back', 'cd', 'folder']
+
+        ls = os.listdir(os.path.dirname(self.src_fn))
+        for fn in ls:
+            full_fn = os.path.join(os.path.dirname(self.src_fn), fn)
+            if os.path.isfile(full_fn):
+                for c in names:
+                    if c in lower(fn):
+                        return {'img_data': open(full_fn, 'rb').read(),
+                                'mime_type': 'image/{ext}'.format(ext=fn.split('.')[1])}
+
+        return {'img_data': None, 'mime_type': None}
+
+    def getInfo(self, **kwargs):
         lfm = LastFM.get_instance()
-        info = dict(title=title, artist=artist)
+        info = kwargs
 
-        if not info['artist']:
-            info.update(lfm.trackSearch(title, artist))
-
+        if not info.get('artist'):
+            info.update(lfm.trackSearch(**info))
         try:
-            info.update(lfm.trackGetInfo(title, artist))
+            info.update(lfm.trackGetInfo(**info))
         except Exception as e:
-            info.update(lfm.artistGetInfo(artist))
+            info.update(lfm.artistGetInfo(**info))
 
         if not info.get('album'):
-            info.update(lfm.artistGetInfo(artist))
+            info.update(lfm.artistGetInfo(**info))
         if not info['image']['img_data']:
-            ainfo = lfm.artistGetInfo(artist)
+            ainfo = lfm.artistGetInfo(**info)
             info['image'] = ainfo['image']
             info['artist'] = ainfo['artist']
         if not info.get('genres'):
-            ainfo = lfm.artistGetInfo(artist)
+            ainfo = lfm.artistGetInfo(**info)
             info['genres'] = ainfo['genres']
             info['artist'] = ainfo['artist']
 
@@ -255,20 +277,6 @@ class setTagsThread(threading.Thread):
         else:
             return dict(title=fn,
                         artist='')
-
-    def getBestEncoding(self, info):
-        detector = chardet.UniversalDetector()
-        for v in info.itervalues():
-            if not detector.done:
-                if isinstance(v, str):
-                    detector.feed(v)
-        detector.close()
-        stat = detector.result
-
-        if stat['confidence'] > 0.9:
-            return stat['encoding']
-        else:
-            return self.options.alternative_encoding
 
     def done(self):
         self.msema.release()
@@ -287,9 +295,11 @@ class setTagsThread(threading.Thread):
                 return
 
             info = dict(title=unicode2bytestring(_strip(afile.tag.title)),
-                        artist=unicode2bytestring(_strip(afile.tag.artist)))
+                        artist=unicode2bytestring(_strip(afile.tag.artist)),
+                        album=unicode2bytestring(_strip(afile.tag.album)),
+                        album_artist=unicode2bytestring(_strip(afile.tag.album_artist)),
+                        image=self.get_local_cover(),)
 
-#             encoding = self.getBestEncoding(info)
             if self.options.alternative_encoding:
                 for k, v in info.iteritems():
                     info[k] = uni(v, self.options.alternative_encoding)
@@ -297,22 +307,27 @@ class setTagsThread(threading.Thread):
             if not info['title']:
                 info.update(self.getInfoFromFilename())
             try:
-                info.update(self.getInfo(info['title'], info['artist']))
+                if not self.options.offline:
+                    info.update(self.getInfo(**info))
             except Exception as e:
-                print fmt("{fn}: {a} - {t}", fn=self.src_fn, a=info['artist'], t=info['title'])
+                print fmt("{fn}: {artist} - {title}", fn=self.src_fn, **info)
 
-            afile.tag.artist = info.get('artist', '')
-            afile.tag.album_artist = afile.tag.artist
-            afile.tag.title = info.get('title', '')
-            afile.tag.album = info.get('album') if info.get('album') else afile.tag.artist
+            afile.tag.artist = info['artist']
+            afile.tag.title = info['title']
+            afile.tag.album = info['album'] if info['album'] else afile.tag.artist
+            afile.tag.album_artist = info['album_artist'] if info['album_artist'] else afile.tag.artist
 
-            for g in info.get('genres', []):
-                try:
-                    afile.tag.genre = g
-                    if afile.tag.genre.id is not None:
-                        break
-                except Exception:
-                    pass
+            if len(info.get('genres', [])) > 0:
+                if afile.tag.genre.id is None:
+                    for g in info['genres']:
+                        try:
+                            afile.tag.genre = g
+                            if afile.tag.genre.id is not None:
+                                break
+                        except Exception:
+                            pass
+                    else:
+                        afile.tag.genre = info['genres'][0]
             try:
                 afile.tag.images.set(3, img_data=info['image']['img_data'],
                                      mime_type=info['image']['mime_type'], img_url=None)
@@ -321,7 +336,7 @@ class setTagsThread(threading.Thread):
 
             comment.set(setTagsThread.TAG_COMMENT, '')
 
-            afile.tag.save(version=setTagsThread.ID3_DEFAULT_VERSION, encoding='utf8')
+            afile.tag.save(version=id3.ID3_V2_3, encoding='utf8')
         except Exception as e:
             print fmt("{fn}: {e}", fn=self.src_fn, e=e)
         finally:
@@ -345,6 +360,8 @@ class Options():
                             help='Source path template')
         parser.add_argument('--force', '-f', action='store_true',
                             help='Force set tags')
+        parser.add_argument('--offline', action='store_true',
+                            help="Don't fetch info from internet.")
         parser.add_argument('--alternative-encoding', '-e', default='windows-1251',
                             help='Alternative encoding of tags, if autodetect is failed. DEFAULT: windows-1251')
 
