@@ -318,7 +318,7 @@ class setTagsThread(threading.Thread):
             afile.tag.album_artist = info['album_artist'] if info['album_artist'] else afile.tag.artist
 
             if len(info.get('genres', [])) > 0:
-                if afile.tag.genre.id is None:
+                if afile.tag.genre is None or afile.tag.genre.id is None:
                     for g in info['genres']:
                         try:
                             afile.tag.genre = g
