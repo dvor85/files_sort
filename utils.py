@@ -79,13 +79,13 @@ def datetimeFromMeta(meta, exif_params):
     """
     for x in exif_params:
         try:
-            tms = meta[x].split('+')
-            if len(tms) == 2:
-                tz = tms[1].split(':')
-                return datetime.datetime.strptime(tms[0], "%Y:%m:%d %H:%M:%S") + \
-                    datetime.timedelta(hours=str2int(tz[0]), minutes=str2int(tz[1]))
-            else:
-                return datetime.datetime.strptime(meta[x][:19], "%Y:%m:%d %H:%M:%S")
+            #             tms = meta[x].split('+')
+            #             if len(tms) == 2:
+            #                 tz = tms[1].split(':')
+            #                 return datetime.datetime.strptime(tms[0], "%Y:%m:%d %H:%M:%S") + \
+            #                     datetime.timedelta(hours=str2int(tz[0]), minutes=str2int(tz[1]))
+            #             else:
+            return datetime.datetime.strptime(meta[x][:19], "%Y:%m:%d %H:%M:%S")
         except Exception:
             pass
     return datetime.datetime.today()
