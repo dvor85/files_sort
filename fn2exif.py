@@ -32,7 +32,7 @@ class setTagsThread(threading.Thread):
         try:
             fn_m = _re_filename.search(self.src_fn)
             if fn_m:
-                src_dt = datetime.datetime.strptime("{Y}{m}{d}{H}{M}{S}".format(
+                src_dt = strptime("{Y}{m}{d}{H}{M}{S}".format(
                     Y=fn_m.group('Y'),
                     m=fn_m.group('m'),
                     d=fn_m.group('d'),
@@ -41,13 +41,14 @@ class setTagsThread(threading.Thread):
                     S=fn_m.group('S'),
                 ), "%Y%m%d%H%M%S")
                 print fmt("set alldates={cdate} of {src}", src=self.src_fn, cdate=src_dt.strftime("%Y:%m:%d %H:%M:%S"))
-                subprocess.check_call(shlex.split(fs_enc(
-                    fmt('"{exiftool}" -charset filename={charset} -overwrite_original -q -m -fast -alldates="{cdate}" "{src}"',
-                        exiftool=self.exiftool,
-                        src=self.src_fn,
-                        cdate=src_dt.strftime("%Y:%m:%d %H:%M:%S"),
-                        charset=locale.getpreferredencoding())))
-                )
+                if not self.options.timeonly:
+                    subprocess.check_call(shlex.split(fs_enc(
+                        fmt('"{exiftool}" -charset filename={charset} -overwrite_original -q -m -fast -alldates="{cdate}" "{src}"',
+                            exiftool=self.exiftool,
+                            src=self.src_fn,
+                            cdate=src_dt.strftime("%Y:%m:%d %H:%M:%S"),
+                            charset=locale.getpreferredencoding())))
+                    )
                 os.utime(self.src_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
         except Exception as e:
             print fmt("{fn}: {e}", fn=self.src_fn, e=e)
@@ -70,6 +71,8 @@ class Options():
         parser = argparse.ArgumentParser(prog='fn2exif.py', add_help=True)
         parser.add_argument('path',
                             help='Source path')
+        parser.add_argument('--timeonly', '-t', action='store_true', default=False,
+                            help='Update only modified time')
         parser.add_argument('--exiftool', '-e',
                             help='Path to exiftool', default='exiftool')
 

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# from __future__ import unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 import os
 import sys
@@ -10,6 +10,8 @@ import re
 import string
 import fnmatch
 import locale
+import time
+import datetime
 
 
 __re_denied = re.compile(ur'[^./\wА-яЁё-]|[./]{2}', re.UNICODE | re.LOCALE)
@@ -18,7 +20,7 @@ fmt = string.Formatter().format
 
 __all__ = ['QueryParam', 'md5sum', 'fileDatetime', 'datetimeFromMeta', 'safe_str', 'split', 'parse_str', 'str2num', 'str2int',
            'uniq', 'rListFiles', 'get_encoding', 'uni', 'utf', 'true_enc', 'fs_enc', 'lower', 'get_comp_name', 'get_home_dir',
-           'get_temp_dir', 'makedirs', 'fmt']
+           'get_temp_dir', 'makedirs', 'fmt', 'strptime']
 
 
 class QueryParam(UserDict):
@@ -41,6 +43,13 @@ class QueryParam(UserDict):
         if self.safe:
             return safe_str(val)
         return escape(val)
+
+
+def strptime(date_string, sformat):
+    try:
+        return datetime.datetime.strptime(uni(date_string), sformat)
+    except TypeError:
+        return datetime.datetime(*(time.strptime(uni(date_string), sformat)))
 
 
 def md5sum(path):
