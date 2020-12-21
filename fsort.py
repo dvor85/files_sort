@@ -37,6 +37,8 @@ class Options():
                             help='Create directories with TEMPLATE. Default="%%Y-%%m"', default="%Y-%m")
         parser.add_argument('--filename-template', '-f',
                             help='Filename TEMPLATE. Default="%%Y-%%m-%%d_%%H-%%M-%%S"', default="%Y-%m-%d_%H-%M-%S")
+        parser.add_argument('--recurse', '-r',
+                            help='Recursively rescan source path', action='store_true')
         parser.add_argument('--exiftool', '-e',
                             help='Path to exiftool', default='exiftool')
 
@@ -56,10 +58,11 @@ def main():
     with tempfile.NamedTemporaryFile() as tmp:
         subprocess.call(shlex.split(fs_enc(
             fmt('"{exiftool}" -charset filename={charset} -q -m -fast \
-             -json -r "{path}"',
+             -json {recurse} "{path}"',
                 exif_params=" ".join(['-%s' % x for x in EXIF_PARAMS]),
                 exiftool=uni(options.exiftool),
                 path=src_path,
+                recurse='-r' if options.recurse else '',
                 charset=locale.getpreferredencoding()))), stdout=tmp)
         tmp.seek(0)
         srclist = json.load(tmp)
