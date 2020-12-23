@@ -12,10 +12,15 @@ import locale
 import shlex
 import threading
 from utils import *
+
 try:
     import simplejson as json
 except ImportError:
     import json
+try:
+    import xml.etree.cElementTree as XML
+except ImportError:
+    import xml.etree.ElementTree as XML
 
 
 class Options():
@@ -51,14 +56,43 @@ class Options():
 EXIF_PARAMS = ('DateTimeOriginal', 'CreateDate', 'ModifyDate', 'FileModifyDate', 'FileCreateDate')
 
 
+def make_gthumb_catalogs(dst_file):
+    options = Options.get_instance()()
+    cat_root = os.path.normpath(uni(options.src_path))
+    dst_dt = fileDatetime(dst_file)
+    cat_file = "{0}.catalog".format(dst_dt.strftime('%Y-%m-%d'))
+    cat_path = os.path.join(cat_root, dst_dt.strftime('%Y'))
+    try:
+        os.makedirs(cat_path)
+    except OSError:
+        pass
+    if not os.path.exists(os.path.join(cat_path, cat_file)):
+        _xml = """<?xml version="1.0" encoding="UTF-8"?>
+<catalog version="1.0">
+  <date>{date}</date>
+  <files>
+  </files>
+</catalog>
+""".format(date=dst_dt.strftime('%Y:%m:%d 00:00:00'))
+        with open(os.path.join(cat_path, cat_file), mode='w', encoding='utf8') as a_xml:
+            a_xml.write(_xml)
+    with open(os.path.join(cat_path, cat_file), mode='r', encoding='utf8') as a_xml:
+        tree = XML.fromstring(a_xml.read())
+
+    a_root = tree.getroot()
+    files = a_root.find('files')
+    files.append(XML.Element('file', {'uri': "file://{0}".format(dst_file.replace('\\', '/').replace(':', ''))}))
+    tree.write(os.path.join(cat_path, cat_file), encoding='utf8')
+
+
 def main():
     options = Options.get_instance()()
 
     src_path = os.path.normpath(uni(options.src_path))
     with tempfile.NamedTemporaryFile() as tmp:
         subprocess.call(shlex.split(fs_enc(
-            fmt('"{exiftool}" -charset filename={charset} -q -m -fast \
-             -json {recurse} "{path}"',
+            '"{exiftool}" -charset filename={charset} -q -m -fast \
+             -json {recurse} "{path}"'.format(
                 exif_params=" ".join(['-%s' % x for x in EXIF_PARAMS]),
                 exiftool=uni(options.exiftool),
                 path=src_path,
@@ -74,7 +108,7 @@ def main():
             folder_name = src_dt.strftime(options.directory_template)
 
             if len(options.filename_template) > 0:
-                new_fn = fmt("{dt}{ext}", dt=src_dt.strftime(options.filename_template), ext=os.path.splitext(src_fn)[1])
+                new_fn = "{dt}{ext}".format(dt=src_dt.strftime(options.filename_template), ext=os.path.splitext(src_fn)[1])
             else:
                 new_fn = os.path.basename(src_fn)
 
@@ -102,7 +136,7 @@ def main():
                     dst_fn = fmt("{fn}-{i}{ext}", fn=split_fn[0], i=i, ext=split_fn[1])
             else:
                 shutil.move(src_fn, dst_fn)
-                print fmt("{src} -> {dst}", src=src_fn, dst=dst_fn)
+                print("{src} -> {dst}".format(src=src_fn, dst=dst_fn))
 
                 try:
                     os.rmdir(os.path.dirname(src_fn))
@@ -110,9 +144,10 @@ def main():
                     pass
 
             os.utime(dst_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
+            make_gthumb_catalogs(dst_fn)
 
         except Exception as e:
-            print uni(e.message)
+            print(uni(e.message))
 
 
 if __name__ == '__main__':
