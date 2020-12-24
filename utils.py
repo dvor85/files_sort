@@ -17,7 +17,7 @@ __re_spaces = re.compile(r'\s+')
 fmt = string.Formatter().format
 
 __all__ = ['md5sum', 'fileDatetime', 'datetimeFromMeta', 'safe_str', 'split', 'parse_str', 'str2num', 'str2int',
-           'uniq', 'rListFiles', 'get_encoding', 'uni', 'fs_enc',
+           'uniq', 'rListFiles', 'get_encoding', 'uni', 'fs_enc', 'get_comp_name', 'get_home_dir', 'get_temp_dir',
            'makedirs', 'fmt', 'strptime']
 
 
@@ -209,7 +209,7 @@ def str2(s, to_encoding='utf8'):
     """
     PY2 - Кодирует :s: в :to_encoding:
     """
-    if PY2 and isinstance(s, unicode):
+    if PY2 and isinstance(s, six.text_type):
         return s.encode(to_encoding, 'ignore')
     return str(s)
 
@@ -224,6 +224,28 @@ def fs_enc(path, from_encoding='utf8'):
             enc = 'utf8'
         return uni(path, from_encoding).encode(enc, 'ignore')
     return uni(path, from_encoding)
+
+
+def get_comp_name():
+    __env_var = 'HOSTNAME'
+    if sys.platform.startswith('win'):
+        __env_var = 'COMPUTERNAME'
+    return os.getenv(__env_var)
+
+
+def get_home_dir():
+    __env_var = 'HOME'
+    if sys.platform.startswith('win'):
+        __env_var = 'APPDATA'
+    return os.getenv(__env_var)
+
+
+def get_temp_dir():
+    if sys.platform.startswith('win'):
+        __env_var = 'TEMP'
+        return os.getenv(__env_var)
+    else:
+        return "/tmp"
 
 
 def makedirs(path, mode=0x0775):
