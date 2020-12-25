@@ -10,6 +10,7 @@ import fnmatch
 import locale
 import time
 import six
+from six import iteritems
 
 PY2 = sys.version_info[0] == 2
 __re_denied = re.compile(r'[^./\wА-яЁё-]|[./]{2}')
@@ -46,7 +47,7 @@ def fileDatetime(path):
         from PIL.ExifTags import TAGS
 
         exif = Image.open(path)._getexif()
-        fields = dict((TAGS.get(k), v) for k, v in exif.iteritems())
+        fields = dict((TAGS.get(k), v) for k, v in iteritems(exif))
         return datetime.datetime.strptime(fields["DateTimeOriginal"], "%Y:%m:%d %H:%M:%S")
 
     def datetimeFromFS():
@@ -85,9 +86,9 @@ def safe_str(s, encoding=None):
         if encoding is None:
             encoding = get_encoding(s)
         res = uni(s, encoding)
-        return __re_denied.sub(u'', res).encode(encoding, 'ignore')
+        return __re_denied.sub('', res).encode(encoding, 'ignore')
     else:
-        return __re_denied.sub(u'', res)
+        return __re_denied.sub('', res)
 
 
 def split(s, num=0):

@@ -30,14 +30,14 @@ class Options():
         parser = argparse.ArgumentParser(prog='fsort.py', add_help=True)
         parser.add_argument('src_path',
                             help='Source path template')
-        parser.add_argument('--gthumb_catalogs_path', '-g', default=os.path.expanduser("~/.local/.share/gthumb/catalogs"),
-                            help="Path to gthumb's catalogs")
         parser.add_argument('--directory-template', '-d',
                             help='Create directories with TEMPLATE. Default="%%Y-%%m"', default="%Y-%m")
         parser.add_argument('--filename-template', '-f',
                             help='Filename TEMPLATE. Default="%%Y-%%m-%%d_%%H-%%M-%%S"', default="%Y-%m-%d_%H-%M-%S")
         parser.add_argument('--recurse', '-r',
-                            help='Recursively rescan source path', action='store_true')
+                            help='Recursively scan source path', action='store_true')
+        parser.add_argument('--create_ghtumb', '-c',
+                            help='Create gthumb catalog whithout any changes', action='store_true')
         parser.add_argument('--exiftool', '-e',
                             help='Path to exiftool', default='exiftool')
 
@@ -55,14 +55,15 @@ class Fsort():
         self.options = Options.get_instance()()
         self.src_path = os.path.normpath(self.options.src_path)
         self.gthumb_cat = {}
-        self.gthumb_root = self.options.gthumb_catalogs_path
+        self.gthumb_root = os.path.expanduser("~/.local/.share/gthumb/catalogs")
 
-    def add_gthumb_catalog(self, dst_fn):
-        dst_dt = fileDatetime(dst_fn)
-        if dst_dt.strftime('%Y-%m-%d') in self.gthumb_cat:
-            self.gthumb_cat[dst_dt.strftime('%Y-%m-%d')].append(dst_fn)
+    def add_gthumb_catalog(self, fn, dt=None):
+        if dt is None:
+            dt = fileDatetime(fn)
+        if dt.strftime('%Y-%m-%d') in self.gthumb_cat:
+            self.gthumb_cat[dt.strftime('%Y-%m-%d')].append(fn)
         else:
-            self.gthumb_cat[dst_dt.strftime('%Y-%m-%d')] = [dst_fn]
+            self.gthumb_cat[dt.strftime('%Y-%m-%d')] = [fn]
 
     def write_gthumb_catalogs(self):
         for dt, files in self.gthumb_cat.items():
@@ -79,21 +80,21 @@ class Fsort():
                 a_xml.write(_xml)
 
     def write_gthumb_last_added(self):
-        name = "добавленные {date}".format(date=datetime.datetime.today().strftime('%Y-%m-%d'))
-        _xml = """<?xml version="1.0" encoding="UTF-8"?>
-<catalog version="1.0">
-<date>{date} 00:00:00</date>
-<name>{name}</name>
-<files>\n""".format(date=datetime.datetime.today().strftime('%Y:%m:%d'), name=name)
-        for dt, files in self.gthumb_cat.items():
-            for _f in files:
-                _xml += '<file uri="file://{file}" />\n'.format(file=_f.replace('\\', '/').replace(':', ''))
-        _xml += "</files>\n</catalog>"
-        with open(os.path.join(self.gthumb_root, "{0}.catalog".format(name)), mode='w', encoding='utf8') as a_xml:
-            a_xml.write(_xml)
+        if len(self.gthumb_cat) > 0:
+            name = "добавленные {date}".format(date=datetime.datetime.today().strftime('%Y-%m-%d'))
+            _xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <catalog version="1.0">
+    <date>{date} 00:00:00</date>
+    <name>{name}</name>
+    <files>\n""".format(date=datetime.datetime.today().strftime('%Y:%m:%d'), name=name)
+            for dt, files in self.gthumb_cat.items():
+                for _f in files:
+                    _xml += '<file uri="file://{file}" />\n'.format(file=_f.replace('\\', '/').replace(':', ''))
+            _xml += "</files>\n</catalog>"
+            with open(os.path.join(self.gthumb_root, "{0}.catalog".format(name)), mode='w', encoding='utf8') as a_xml:
+                a_xml.write(_xml)
 
     def main(self):
-
         src_path = os.path.normpath(self.options.src_path)
         with tempfile.NamedTemporaryFile() as tmp:
             subprocess.call(shlex.split(fs_enc(
@@ -110,48 +111,50 @@ class Fsort():
             try:
                 src_fn = uni(os.path.normpath(meta['SourceFile']))
                 src_dt = datetimeFromMeta(meta, exif_params=EXIF_PARAMS)
-
-                folder_name = src_dt.strftime(self.options.directory_template)
-
-                if len(self.options.filename_template) > 0:
-                    new_fn = "{dt}{ext}".format(dt=src_dt.strftime(self.options.filename_template),
-                                                ext=os.path.splitext(src_fn)[1])
+                if self.options.create_ghtumb:
+                    self.add_gthumb_catalog(src_fn, src_dt)
                 else:
-                    new_fn = os.path.basename(src_fn)
+                    folder_name = src_dt.strftime(self.options.directory_template)
 
-                if os.path.isdir(src_path):
-                    dst_dir = os.path.join(src_path, folder_name)
-                else:
-                    dst_dir = os.path.join(os.path.dirname(src_path), folder_name)
-
-                try:
-                    os.mkdir(dst_dir)
-                except OSError:
-                    pass
-
-                dst_fn = os.path.normpath(os.path.join(dst_dir, new_fn))
-                split_fn = os.path.splitext(dst_fn)
-
-                i = 0
-                while os.path.isfile(dst_fn):
-                    if shutil._samefile(src_fn, dst_fn):
-                        break
-                    if os.path.getsize(src_fn) == os.path.getsize(dst_fn) and md5sum(src_fn) == md5sum(dst_fn):
-                        os.unlink(dst_fn)
+                    if len(self.options.filename_template) > 0:
+                        new_fn = "{dt}{ext}".format(dt=src_dt.strftime(self.options.filename_template),
+                                                    ext=os.path.splitext(src_fn)[1])
                     else:
-                        i += 1
-                        dst_fn = "{fn}-{i}{ext}".format(fn=split_fn[0], i=i, ext=split_fn[1])
-                else:
-                    shutil.move(src_fn, dst_fn)
-                    print("{src} -> {dst}".format(src=src_fn, dst=dst_fn))
+                        new_fn = os.path.basename(src_fn)
+
+                    if os.path.isdir(src_path):
+                        dst_dir = os.path.join(src_path, folder_name)
+                    else:
+                        dst_dir = os.path.join(os.path.dirname(src_path), folder_name)
 
                     try:
-                        os.rmdir(os.path.dirname(src_fn))
+                        os.mkdir(dst_dir)
                     except OSError:
                         pass
 
-                os.utime(dst_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
-                self.add_gthumb_catalog(dst_fn)
+                    dst_fn = os.path.normpath(os.path.join(dst_dir, new_fn))
+                    split_fn = os.path.splitext(dst_fn)
+
+                    i = 0
+                    while os.path.isfile(dst_fn):
+                        if shutil._samefile(src_fn, dst_fn):
+                            break
+                        if os.path.getsize(src_fn) == os.path.getsize(dst_fn) and md5sum(src_fn) == md5sum(dst_fn):
+                            os.unlink(dst_fn)
+                        else:
+                            i += 1
+                            dst_fn = "{fn}-{i}{ext}".format(fn=split_fn[0], i=i, ext=split_fn[1])
+                    else:
+                        shutil.move(src_fn, dst_fn)
+                        print("{src} -> {dst}".format(src=src_fn, dst=dst_fn))
+
+                        try:
+                            os.rmdir(os.path.dirname(src_fn))
+                        except OSError:
+                            pass
+
+                    self.add_gthumb_catalog(dst_fn, src_dt)
+                    os.utime(dst_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
 
             except Exception as e:
                 print(uni(e.message))

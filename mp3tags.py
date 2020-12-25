@@ -1,26 +1,26 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from __future__ import unicode_literals
 import requests
 import os
 import argparse
+import threading
 import eyed3
 from eyed3 import id3
-import threading
+
 import time
 import re
 import psutil
 from utils import *
 
 
-_re_filename = re.compile(r'(?P<artist>.*?)[\s_]*-+[\s_]*(?P<title>.*)',  re.UNICODE | re.LOCALE)
-_re_strip = re.compile(r'[\(\[].*?[\)\]]|^\d+[\.\s\-]*|\.+$|[^\s]{1}\.',  re.UNICODE | re.LOCALE)
+_re_filename = re.compile(r'(?P<artist>.*?)[\s_]*-+[\s_]*(?P<title>.*)')
+_re_strip = re.compile(r'[\(\[].*?[\)\]]|^\d+[\.\s\-]*|\.+$|[^\s]{1}\.')
 
 
 def request(url, method='get', params=None, **kwargs):
     params_str = "?" + "&".join(("{k}={v}".format(k=uni(k), v=uni(v))
-                                 for k, v in params.iteritems())) if params and method == 'get' else ""
+                                 for k, v in params.items())) if params and method == 'get' else ""
 #     print(fmt("{t} | {u}{p}", u=url, p=params_str, t=time.time()))
     if not url:
         return
@@ -46,14 +46,14 @@ def unicode2bytestring(string):
     return string
 
 
-class TimeLimitedSemaphore(threading._Semaphore):
+class TimeLimitedSemaphore(threading.Semaphore):
     def __init__(self, value=1, perseconds=1, verbose=None):
-        threading._Semaphore.__init__(self, value=value, verbose=verbose)
+        threading.Semaphore.__init__(self, value=value, verbose=verbose)
         self._perseconds = perseconds
         self._time = 0
 
     def acquire(self, blocking=1):
-        rc = threading._Semaphore.acquire(self, blocking)
+        rc = threading.Semaphore.acquire(self, blocking)
         if self._Semaphore__value == 0:
             self._time = time.time()
         dt = time.time() - self._time
@@ -180,7 +180,7 @@ class LastFM():
         tracks = ts['results']['trackmatches']['track']
         if kwargs.get('artist'):
             for track in tracks:
-                if lower(track['artist']) in lower(kwargs['artist']):
+                if track['artist'].lower() in kwargs['artist'].lower():
                     return dict(artist=track['artist'],
                                 title=track['name'])
 
@@ -238,7 +238,7 @@ class setTagsThread(threading.Thread):
             full_fn = os.path.join(os.path.dirname(self.src_fn), fn)
             if os.path.isfile(full_fn):
                 for c in names:
-                    if c in lower(fn):
+                    if c in fn.lower():
                         return {'img_data': open(full_fn, 'rb').read(),
                                 'mime_type': 'image/{ext}'.format(ext=fn.split('.')[1])}
 
@@ -301,7 +301,7 @@ class setTagsThread(threading.Thread):
                         image=self.get_local_cover(),)
 
             if self.options.alternative_encoding:
-                for k, v in info.iteritems():
+                for k, v in info.items():
                     info[k] = uni(v, self.options.alternative_encoding)
 
             if not info['title']:
@@ -310,7 +310,7 @@ class setTagsThread(threading.Thread):
                 if not self.options.offline:
                     info.update(self.getInfo(**info))
             except Exception as e:
-                print fmt("{fn}: {artist} - {title}", fn=self.src_fn, **info)
+                print("{fn}: {artist} - {title}".format(fn=self.src_fn, **info))
 
             afile.tag.artist = info['artist']
             afile.tag.title = info['title']
@@ -332,13 +332,13 @@ class setTagsThread(threading.Thread):
                 afile.tag.images.set(3, img_data=info['image']['img_data'],
                                      mime_type=info['image']['mime_type'], img_url=None)
             except Exception as e:
-                print fmt("{fn}: {e}", fn=self.src_fn, e="Error add image")
+                print("{fn}: {e}".format(fn=self.src_fn, e="Error add image"))
 
             comment.set(setTagsThread.TAG_COMMENT, '')
 
             afile.tag.save(version=id3.ID3_V2_3, encoding='utf8')
         except Exception as e:
-            print fmt("{fn}: {e}", fn=self.src_fn, e=e)
+            print("{fn}: {e}".format(fn=self.src_fn, e=e))
         finally:
             self.done()
 

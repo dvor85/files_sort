@@ -1,6 +1,5 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
 
 import argparse
 import subprocess
@@ -15,8 +14,7 @@ import psutil
 from utils import *
 
 _re_filename = re.compile(
-    ur'(?P<Y>\d{4})[\s_.-]*(?P<m>\d{2})[\s_.-]*(?P<d>\d{2})[\s_.-]*(?P<H>\d{2})[\s_.-]*(?P<M>\d{2})[\s_.-]*(?P<S>\d{2})',
-    re.UNICODE | re.LOCALE)
+    r'(?P<Y>\d{4})[\s_.-]*(?P<m>\d{2})[\s_.-]*(?P<d>\d{2})[\s_.-]*(?P<H>\d{2})[\s_.-]*(?P<M>\d{2})[\s_.-]*(?P<S>\d{2})')
 
 
 class setTagsThread(threading.Thread):
@@ -40,7 +38,7 @@ class setTagsThread(threading.Thread):
                     M=fn_m.group('M'),
                     S=fn_m.group('S'),
                 ), "%Y%m%d%H%M%S")
-                print fmt("set alldates={cdate} of {src}", src=self.src_fn, cdate=src_dt.strftime("%Y:%m:%d %H:%M:%S"))
+                print("set alldates={cdate} of {src}".format(src=self.src_fn, cdate=src_dt.strftime("%Y:%m:%d %H:%M:%S")))
                 if not self.options.timeonly:
                     subprocess.check_call(shlex.split(fs_enc(
                         fmt('"{exiftool}" -charset filename={charset} -overwrite_original -q -m -fast -alldates="{cdate}" "{src}"',
@@ -51,7 +49,7 @@ class setTagsThread(threading.Thread):
                     )
                 os.utime(self.src_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
         except Exception as e:
-            print fmt("{fn}: {e}", fn=self.src_fn, e=e)
+            print("{fn}: {e}".format(fn=self.src_fn, e=e))
         finally:
             self.msema.release()
 
@@ -94,7 +92,7 @@ def main():
             setTagsThread(src_fn, Msema).start()
         except Exception as e:
             Msema.release()
-            print uni(e.message)
+            print(uni(e.message))
 
 
 if __name__ == '__main__':

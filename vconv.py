@@ -1,7 +1,6 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from __future__ import unicode_literals
 import subprocess
 import os
 import time
@@ -90,7 +89,7 @@ def main():
             dst_fn = fmt("{f}{overwrite}.mp4", f=os.path.splitext(dst_fn)[0],
                          overwrite="_encoded_" if options.overwrite else "")
 
-            print fmt("convert {src} -> {dst}", src=src_fn, dst=dst_fn)
+            print("convert {src} -> {dst}".format(src=src_fn, dst=dst_fn))
             try:
                 os.makedirs(os.path.dirname(dst_fn))
             except OSError:
@@ -123,7 +122,7 @@ def main():
                 shutil.move(dst_fn, src_fn)
 
         except Exception as e:
-            print uni(e.message)
+            print(uni(e.message))
 
 
 if __name__ == '__main__':
