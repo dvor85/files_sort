@@ -37,7 +37,7 @@ class Options():
         parser.add_argument('--recurse', '-r',
                             help='Recursively scan source path', action='store_true')
         parser.add_argument('--create_ghtumb', '-c',
-                            help='Create gthumb catalog whithout any changes', action='store_true')
+                            help='Create gthumb catalog. Update modification date from exif.', action='store_true')
         parser.add_argument('--exiftool', '-e',
                             help='Path to exiftool', default='exiftool')
 
@@ -55,7 +55,7 @@ class Fsort():
         self.options = Options.get_instance()()
         self.src_path = os.path.normpath(self.options.src_path)
         self.gthumb_cat = {}
-        self.gthumb_root = os.path.expanduser("~/.local/.share/gthumb/catalogs")
+        self.gthumb_root = os.path.expanduser("~/.local/share/gthumb/catalogs")
 
     def add_gthumb_catalog(self, fn, dt=None):
         if dt is None:
@@ -99,7 +99,7 @@ class Fsort():
         with tempfile.NamedTemporaryFile() as tmp:
             subprocess.call(shlex.split(fs_enc(
                 '"{exiftool}" -charset filename={charset} -q -m -fast \
-                 -json {recurse} "{path}"'.format(
+                 -json {recurse} -SourceFile {exif_params} "{path}"'.format(
                     exif_params=" ".join(['-%s' % x for x in EXIF_PARAMS]),
                     exiftool=self.options.exiftool,
                     path=src_path,
@@ -109,10 +109,11 @@ class Fsort():
             srclist = json.load(tmp)
         for meta in srclist:
             try:
-                src_fn = uni(os.path.normpath(meta['SourceFile']))
+                src_fn = os.path.abspath(meta['SourceFile'])
                 src_dt = datetimeFromMeta(meta, exif_params=EXIF_PARAMS)
                 if self.options.create_ghtumb:
                     self.add_gthumb_catalog(src_fn, src_dt)
+                    os.utime(src_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
                 else:
                     folder_name = src_dt.strftime(self.options.directory_template)
 

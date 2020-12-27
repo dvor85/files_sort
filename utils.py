@@ -249,7 +249,7 @@ def get_temp_dir():
         return "/tmp"
 
 
-def makedirs(path, mode=0x0775):
+def makedirs(path, mode=0o0775):
     try:
         if not os.path.exists(path):
             os.makedirs(path, mode)
