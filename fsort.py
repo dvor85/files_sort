@@ -47,7 +47,7 @@ class Options():
         return self.options
 
 
-EXIF_PARAMS = ('DateTimeOriginal', 'CreateDate', 'ModifyDate', 'FileModifyDate', 'FileCreateDate')
+EXIF_PARAMS = ['DateTimeOriginal', 'CreateDate', 'ModifyDate', 'FileModifyDate', 'FileCreateDate']
 
 
 class Fsort():
@@ -99,8 +99,8 @@ class Fsort():
         with tempfile.NamedTemporaryFile() as tmp:
             subprocess.call(shlex.split(fs_enc(
                 '"{exiftool}" -charset filename={charset} -q -m -fast \
-                 -json {recurse} -SourceFile {exif_params} "{path}"'.format(
-                    exif_params=" ".join(['-%s' % x for x in EXIF_PARAMS]),
+                 -json {recurse} {exif_params} "{path}"'.format(
+                    exif_params=" ".join(['-%s' % x for x in EXIF_PARAMS + ['SourceFile']]),
                     exiftool=self.options.exiftool,
                     path=src_path,
                     recurse='-r' if self.options.recurse else '',

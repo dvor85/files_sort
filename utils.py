@@ -82,7 +82,7 @@ def safe_str(s, encoding=None):
     :return: Строка s с удаленными запрещенными символами соответствующими __re_denied
     :ValueError: Если кодировка не определена
     """
-    if isinstance(s, str):
+    if isinstance(s, six.binary_type):
         if encoding is None:
             encoding = get_encoding(s)
         res = uni(s, encoding)
@@ -172,7 +172,7 @@ def get_encoding(s):
     """
 
     encoding = None
-    if isinstance(s, str):
+    if isinstance(s, six.binary_type):
         try:
             import chardet
             stat = chardet.detect(s)
