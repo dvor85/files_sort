@@ -60,10 +60,10 @@ class Fsort():
     def add_gthumb_catalog(self, fn, dt=None):
         if dt is None:
             dt = fileDatetime(fn)
-        if dt.strftime('%Y-%m-%d') in self.gthumb_cat:
-            self.gthumb_cat[dt.strftime('%Y-%m-%d')].append(fn)
+        if dt.strftime(self.options.directory_template) in self.gthumb_cat:
+            self.gthumb_cat[dt.strftime(self.options.directory_template)].append(fn)
         else:
-            self.gthumb_cat[dt.strftime('%Y-%m-%d')] = [fn]
+            self.gthumb_cat[dt.strftime(self.options.directory_template)] = [fn]
 
     def write_gthumb_catalogs(self):
         for dt, files in self.gthumb_cat.items():

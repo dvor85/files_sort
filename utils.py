@@ -200,19 +200,22 @@ def uni(s, from_encoding='utf8'):
     :from_encoding: Кодировка из которой декодировать.
     :return: unicode path
     """
-
-    if isinstance(s, six.binary_type):
-        return s.decode(from_encoding, 'ignore')
-    return s
+    try:
+        return six.ensure_text(s, from_encoding, errors='ignore')
+    except TypeError:
+        return six.ensure_text(repr(s), from_encoding, errors='ignore')
 
 
 def str2(s, to_encoding='utf8'):
     """
-    PY2 - Кодирует :s: в :to_encoding:
+    :return
+        PY2 - Кодирует :s: в :to_encoding:
+        PY3 - unicode
     """
-    if PY2 and isinstance(s, six.text_type):
-        return s.encode(to_encoding, 'ignore')
-    return str(s)
+    try:
+        return six.ensure_str(s, to_encoding, errors='ignore')
+    except TypeError:
+        return six.ensure_str(repr(s), to_encoding, errors='ignore')
 
 
 def fs_enc(path, from_encoding='utf8'):
