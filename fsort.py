@@ -58,41 +58,64 @@ class Fsort():
         self.gthumb_root = os.path.expanduser("~/.local/share/gthumb/catalogs")
 
     def add_gthumb_catalog(self, fn, dt=None):
+        _fn = os.path.abspath(fn)
         if dt is None:
-            dt = fileDatetime(fn)
+            dt = fileDatetime(_fn)
         if dt.strftime(self.options.directory_template) in self.gthumb_cat:
-            self.gthumb_cat[dt.strftime(self.options.directory_template)].append(fn)
+            self.gthumb_cat[dt.strftime(self.options.directory_template)].append(_fn)
         else:
-            self.gthumb_cat[dt.strftime(self.options.directory_template)] = [fn]
+            self.gthumb_cat[dt.strftime(self.options.directory_template)] = [_fn]
 
     def write_gthumb_catalogs(self):
         for dt, files in self.gthumb_cat.items():
             _y = dt[:4]
-            _xml = """<?xml version="1.0" encoding="UTF-8"?>
+            _lines = []
+            _fn = os.path.join(self.gthumb_root, _y, "{0}.catalog".format(dt))
+            _xml_b = """<?xml version="1.0" encoding="UTF-8"?>
 <catalog version="1.0">
 <date>{date} 00:00:00</date>
 <files>\n""".format(date=dt.replace('-', ':'))
+            if not self.options.create_ghtumb:
+                if os.path.exists(_fn):
+                    with open(_fn, mode='r', encoding='utf8') as a_xml:
+                        _lines = a_xml.readlines()
+                    _lines = [x.rstrip('\n') for x in _lines if 'file://' in x]
             for _f in files:
-                _xml += '<file uri="file://{file}" />\n'.format(file=_f.replace('\\', '/').replace(':', ''))
-            _xml += "</files>\n</catalog>"
+                _l = '<file uri="file://{file}" />'.format(file=_f.replace('\\', '/').replace(':', ''))
+                if _l not in _lines:
+                    _lines.append(_l)
+
             makedirs(os.path.join(self.gthumb_root, _y))
-            with open(os.path.join(self.gthumb_root, _y, "{0}.catalog".format(dt)), mode='w', encoding='utf8') as a_xml:
-                a_xml.write(_xml)
+            with open(_fn, mode='w', encoding='utf8') as a_xml:
+                a_xml.write(_xml_b)
+                a_xml.write("\n".join(_lines))
+                a_xml.write("\n</files>\n</catalog>")
 
     def write_gthumb_last_added(self):
         if len(self.gthumb_cat) > 0:
-            name = "добавленные {date}".format(date=datetime.datetime.today().strftime('%Y-%m-%d'))
-            _xml = """<?xml version="1.0" encoding="UTF-8"?>
+            name = "Добавленные {date}".format(date=datetime.datetime.today().strftime('%Y-%m-%d'))
+            _xml_b = """<?xml version="1.0" encoding="UTF-8"?>
     <catalog version="1.0">
     <date>{date} 00:00:00</date>
     <name>{name}</name>
     <files>\n""".format(date=datetime.datetime.today().strftime('%Y:%m:%d'), name=name)
+            _fn = os.path.join(self.gthumb_root, "{0}.catalog".format(name))
+            _lines = []
+            if not self.options.create_ghtumb:
+                if os.path.exists(_fn):
+                    with open(_fn, mode='r', encoding='utf8') as a_xml:
+                        _lines = a_xml.readlines()
+                    _lines = [x.rstrip('\n') for x in _lines if 'file://' in x]
             for dt, files in self.gthumb_cat.items():
                 for _f in files:
-                    _xml += '<file uri="file://{file}" />\n'.format(file=_f.replace('\\', '/').replace(':', ''))
-            _xml += "</files>\n</catalog>"
-            with open(os.path.join(self.gthumb_root, "{0}.catalog".format(name)), mode='w', encoding='utf8') as a_xml:
-                a_xml.write(_xml)
+                    _l = '<file uri="file://{file}" />'.format(file=_f.replace('\\', '/').replace(':', ''))
+                    if _l not in _lines:
+                        _lines.append(_l)
+
+            with open(_fn, mode='w', encoding='utf8') as a_xml:
+                a_xml.write(_xml_b)
+                a_xml.write("\n".join(_lines))
+                a_xml.write("\n</files>\n</catalog>")
 
     def main(self):
         src_path = os.path.normpath(self.options.src_path)
