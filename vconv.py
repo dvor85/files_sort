@@ -9,7 +9,8 @@ import tempfile
 import argparse
 import shutil
 import shlex
-from utils import *
+import utils
+from pathlib import Path
 import threading
 try:
     import simplejson as json
@@ -32,7 +33,7 @@ class Options():
         return Options._instance
 
     def __init__(self):
-        parser = argparse.ArgumentParser(prog='vconv.py', add_help=True)
+        parser = argparse.ArgumentParser(prog=Path('__file__').name, add_help=True)
         parser.add_argument('src_path',
                             help='Source path template')
         parser.add_argument('dst_path',
@@ -45,6 +46,8 @@ class Options():
                             help='Video bitrate', default='5000k')
         parser.add_argument('--recode', '-r', action="store_true",
                             help='If set, then recode with libx264 and bitrate BITRATE, else only copy.')
+        parser.add_argument('--accel', '-a', action="store_true",
+                            help='If set, use hardware acceleration.')
         parser.add_argument('--overwrite', '-o', action="store_true",
                             help='If set, then source file will be overwriten by converted file, independent of destination path.')
 
@@ -54,75 +57,51 @@ class Options():
         return self.options
 
 
-def isWebLink(s):
-    return '://' in s
-
-
 def main():
     options = Options.get_instance()()
-    src_path = uni(options.src_path)
-    dst_path = os.path.normpath(uni(options.dst_path))
+    src_path = options.src_path
+    dst_path = Path(options.dst_path).absolute()
+    overwrite = "_encoded_" if not options.overwrite else ""
 
-    if not isWebLink(src_path):
-        src_path = os.path.normpath(src_path)
+    with tempfile.NamedTemporaryFile() as tmp:
+        subprocess.call(shlex.split(
+            f'"{options.exiftool}" -charset filename={locale.getpreferredencoding()} ' +
+            " ".join(f"-{x}" for x in EXIF_PARAMS + ("SourceFile", "MIMEType", "AvgBitrate")) +
+            f' -q -m -fast -json -r "{src_path}"'), stdout=tmp)
+        tmp.seek(0)
+        srclist = json.load(tmp)
 
-        with tempfile.NamedTemporaryFile() as tmp:
-            subprocess.call(shlex.split(fs_enc(
-                fmt('"{exiftool}" -charset filename={charset} -q -m -fast -json -r "{path}"',
-                    exif_params=" ".join(['-%s' % x for x in EXIF_PARAMS]),
-                    exiftool=uni(options.exiftool),
-                    path=src_path,
-                    charset=locale.getpreferredencoding()))), stdout=tmp)
-            tmp.seek(0)
-            srclist = json.load(tmp)
-    else:
-        options.overwrite = False
-        srclist = {'SourceFile': src_path}
     for meta in srclist:
-        try:
-            src_fn = uni(os.path.normpath(meta['SourceFile'])) if not isWebLink(meta['SourceFile']) else meta['SourceFile']
-            if not isWebLink(src_fn) and (os.path.isdir(src_path) or os.path.isdir(dst_path)):
-                dst_fn = os.path.join(dst_path, os.path.basename(src_fn))
-            else:
-                dst_fn = dst_path
-
-            dst_fn = fmt("{f}{overwrite}.mp4", f=os.path.splitext(dst_fn)[0],
-                         overwrite="_encoded_" if options.overwrite else "")
-
-            print("convert {src} -> {dst}".format(src=src_fn, dst=dst_fn))
+        if 'video' in meta['MIMEType']:
             try:
-                os.makedirs(os.path.dirname(dst_fn))
-            except OSError:
-                pass
+                if "mp4" not in meta['MIMEType'] or float(meta.get("AvgBitrate", "0 0").split()[0]) * 1024 > float(options.bitrate[:-1]):
+                    src_fn = Path(meta['SourceFile']).absolute()
+                    dst_fn = dst_path / f"{src_fn.stem}{overwrite}.mp4"
+                    print(f"convert {src_fn} -> {dst_fn}")
+                    utils.mkdir(dst_fn.parent)
+                    src_dt = utils.datetimeFromMeta(meta, exif_params=EXIF_PARAMS)
 
-            src_dt = datetimeFromMeta(meta, exif_params=EXIF_PARAMS)
+                    accel = ""
+                    if not options.recode:
+                        vcodec = "copy"
+                    elif options.accel:
+                        vcodec = f"h264_vaapi -b:v {options.bitrate}"
+                        accel = "-hwaccel vaapi -hwaccel_device /dev/dri/renderD128 -hwaccel_output_format vaapi"
+                    else:
+                        vcodec = f"libx264 -b:v {options.bitrate}"
+                    overwr = '-y' if options.overwrite else ''
+                    subprocess.check_call(shlex.split(f'"{options.ffmpeg}" {overwr} -loglevel error \
+                                                            -threads auto {accel} -i "{src_fn}" -c:v {vcodec} -c:a copy \
+                                                            -metadata creation_time="{src_dt:%Y-%m-%d %H:%M:%S}" "{dst_fn}"'))
+                    subprocess.check_call(shlex.split(f'"{options.exiftool}" -charset filename={locale.getpreferredencoding()} -overwrite_original -q -m -fast \
+                                                                            -tagsfromfile "{src_fn}" "{dst_fn}"'))
 
-            vcodec = "libx264 -b:v {bitrate}".format(bitrate=options.bitrate) if options.recode else "copy"
-            subprocess.check_call(shlex.split(fs_enc(fmt('"{ffmpeg}" -loglevel error -threads auto -i "{src}" -c:v {vcodec} -c:a copy \
-                                                                -metadata creation_time="{cdate}" "{dst}"',
-                                                         ffmpeg=uni(options.ffmpeg),
-                                                         vcodec=vcodec,
-                                                         src=src_fn,
-                                                         dst=dst_fn,
-                                                         cdate=src_dt.strftime("%Y-%m-%d %H:%M:%S"))))
-                                  )
+                    os.utime(dst_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
+                    if options.overwrite:
+                        dst_fn.replace(src_fn)
 
-            if not isWebLink(src_fn):
-                subprocess.check_call(shlex.split(fs_enc(
-                    fmt('"{exiftool}" -charset filename={charset} -overwrite_original -q -m -fast \
-                                                                    -tagsfromfile "{src}" "{dst}"',
-                        exiftool=uni(options.exiftool),
-                        src=src_fn,
-                        dst=dst_fn,
-                        charset=locale.getpreferredencoding())))
-                )
-
-            os.utime(dst_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
-            if options.overwrite:
-                shutil.move(dst_fn, src_fn)
-
-        except Exception as e:
-            print(uni(e.message))
+            except Exception as e:
+                print(e)
 
 
 if __name__ == '__main__':

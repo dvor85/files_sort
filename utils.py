@@ -1,21 +1,20 @@
 # -*- coding: utf-8 -*-
-from __future__ import absolute_import, division, unicode_literals
 
 import os
 import sys
 import datetime
 import re
 import string
-import fnmatch
+from pathlib import Path
 import locale
 import time
-import six
-from six import iteritems
+import shutil
 
 PY2 = sys.version_info[0] == 2
 __re_denied = re.compile(r'[^./\wА-яЁё-]|[./]{2}')
 __re_spaces = re.compile(r'\s+')
 fmt = string.Formatter().format
+
 
 __all__ = ['md5sum', 'fileDatetime', 'datetimeFromMeta', 'safe_str', 'split', 'parse_str', 'str2num', 'str2int',
            'uniq', 'rListFiles', 'get_encoding', 'uni', 'fs_enc', 'get_comp_name', 'get_home_dir', 'get_temp_dir',
@@ -34,7 +33,7 @@ def md5sum(path):
     :return: md5 сумма файла
     """
     import hashlib
-    return hashlib.md5(open(path, 'rb').read()).hexdigest()
+    return hashlib.md5(Path(path).read_bytes()).hexdigest()
 
 
 def fileDatetime(path):
@@ -47,7 +46,7 @@ def fileDatetime(path):
         from PIL.ExifTags import TAGS
 
         exif = Image.open(path)._getexif()
-        fields = dict((TAGS.get(k), v) for k, v in iteritems(exif))
+        fields = dict((TAGS.get(k), v) for k, v in exif.items())
         return datetime.datetime.strptime(fields["DateTimeOriginal"], "%Y:%m:%d %H:%M:%S")
 
     def datetimeFromFS():
@@ -77,18 +76,8 @@ def datetimeFromMeta(meta, exif_params):
     return datetime.datetime.today()
 
 
-def safe_str(s, encoding=None):
-    """
-    :return: Строка s с удаленными запрещенными символами соответствующими __re_denied
-    :ValueError: Если кодировка не определена
-    """
-    if isinstance(s, six.binary_type):
-        if encoding is None:
-            encoding = get_encoding(s)
-        res = uni(s, encoding)
-        return __re_denied.sub('', res).encode(encoding, 'ignore')
-    else:
-        return __re_denied.sub('', res)
+def safe_str(s):
+    return __re_denied.sub('', uni(s))
 
 
 def split(s, num=0):
@@ -142,26 +131,6 @@ def uniq(seq):
     return noDupes
 
 
-def rListFiles(path, _pattern='*.*'):
-    """
-    :path: Директория или шаблон
-    :_pattern: Необязательный параметр
-    :return: Возвращает рекурсивный список файлов
-    """
-    files = []
-    path = os.path.abspath(path)
-    if not os.path.isdir(path):
-        pattern = os.path.basename(path)
-        files += rListFiles(os.path.dirname(path), pattern)
-    else:
-        for f in os.listdir(path):
-            if os.path.isdir(os.path.join(path, f)):
-                files += rListFiles(os.path.join(path, f), _pattern)
-            elif fnmatch.fnmatch(f, _pattern):
-                files.append(os.path.join(path, f))
-    return files
-
-
 def get_encoding(s):
     """
     Функция определения кодировки с помощью chardet, иначе
@@ -172,7 +141,7 @@ def get_encoding(s):
     """
 
     encoding = None
-    if isinstance(s, six.binary_type):
+    if isinstance(s, bytes):
         try:
             import chardet
             stat = chardet.detect(s)
@@ -196,35 +165,30 @@ def cmp(a, b):  # @ReservedAssignment
 def uni(s, from_encoding='utf8'):
     """
     Декодирует строку из кодировки encoding
-    :path: строка для декодирования
+    :s: строка для декодирования
     :from_encoding: Кодировка из которой декодировать.
-    :return: unicode path
+    :return: unicode
     """
 
-    if isinstance(s, six.binary_type):
+    if isinstance(s, bytes):
         return s.decode(from_encoding, 'ignore')
-    return s
-
-
-def str2(s, to_encoding='utf8'):
-    """
-    PY2 - Кодирует :s: в :to_encoding:
-    """
-    if PY2 and isinstance(s, six.text_type):
-        return s.encode(to_encoding, 'ignore')
     return str(s)
 
 
-def fs_enc(path, from_encoding='utf8'):
+def utf(s, to_encoding='utf8'):
+    """
+    PY2 - Кодирует :s: в :to_encoding:
+    """
+    if isinstance(s, bytes):
+        return s
+    return str(s).encode(to_encoding, errors='ignore')
+
+
+def fs_enc(path):
     """
     windows workaround. Используется в Popen.
     """
-    if PY2:
-        enc = sys.getfilesystemencoding()
-        if enc is None:
-            enc = 'utf8'
-        return uni(path, from_encoding).encode(enc, 'ignore')
-    return uni(path, from_encoding)
+    return uni(path).encode(sys.getfilesystemencoding(), 'ignore')
 
 
 def get_comp_name():
@@ -249,9 +213,15 @@ def get_temp_dir():
         return "/tmp"
 
 
-def makedirs(path, mode=0o0775):
-    try:
-        if not os.path.exists(path):
-            os.makedirs(path, mode)
-    except Exception as e:
-        print(e)
+def mkdir(path, mode=0o775, parents=True, exist_ok=True):
+    path = Path(path)
+    if not path.is_dir():
+        m = os.umask(0o000)
+        path.mkdir(mode=mode, parents=parents, exist_ok=exist_ok)
+        os.umask(m)
+
+
+def rmdir(path):
+    path = Path(path)
+    shutil.rmtree(path.as_posix())
+    return not path.exists()

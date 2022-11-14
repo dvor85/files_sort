@@ -5,13 +5,14 @@ import argparse
 import subprocess
 import locale
 import os
-import datetime
 import time
 import re
 import shlex
 import threading
 import psutil
-from utils import *
+from pathlib import Path
+import utils
+
 
 _re_filename = re.compile(
     r'(?P<Y>\d{4})[\s_.-]*(?P<m>\d{2})[\s_.-]*(?P<d>\d{2})[\s_.-]*(?P<H>\d{2})[\s_.-]*(?P<M>\d{2})[\s_.-]*(?P<S>\d{2})')
@@ -22,15 +23,15 @@ class setTagsThread(threading.Thread):
         threading.Thread.__init__(self)
         self.daemon = False
         self.options = Options.get_instance()()
-        self.src_fn = uni(src_fn)
-        self.exiftool = uni(self.options.exiftool)
+        self.src_fn = Path(src_fn)
+        self.exiftool = Path(self.options.exiftool)
         self.msema = msema
 
     def run(self):
         try:
             fn_m = _re_filename.search(self.src_fn)
             if fn_m:
-                src_dt = strptime("{Y}{m}{d}{H}{M}{S}".format(
+                src_dt = utils.strptime("{Y}{m}{d}{H}{M}{S}".format(
                     Y=fn_m.group('Y'),
                     m=fn_m.group('m'),
                     d=fn_m.group('d'),
@@ -40,16 +41,13 @@ class setTagsThread(threading.Thread):
                 ), "%Y%m%d%H%M%S")
                 print("set alldates={cdate} of {src}".format(src=self.src_fn, cdate=src_dt.strftime("%Y:%m:%d %H:%M:%S")))
                 if not self.options.timeonly:
-                    subprocess.check_call(shlex.split(fs_enc(
-                        fmt('"{exiftool}" -charset filename={charset} -overwrite_original -q -m -fast -alldates="{cdate}" "{src}"',
-                            exiftool=self.exiftool,
-                            src=self.src_fn,
-                            cdate=src_dt.strftime("%Y:%m:%d %H:%M:%S"),
-                            charset=locale.getpreferredencoding())))
-                    )
+                    subprocess.check_call(shlex.split(
+                        f'"{self.exiftool}" -charset filename={locale.getpreferredencoding()} -overwrite_original -q -m -fast \
+                        -alldates="{src_dt:%Y:%m:%d %H:%M:%S}" "{self.src_fn}"'))
+
                 os.utime(self.src_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
         except Exception as e:
-            print("{fn}: {e}".format(fn=self.src_fn, e=e))
+            print(f"{self.src_fn}: {e}")
         finally:
             self.msema.release()
 
@@ -66,7 +64,7 @@ class Options():
         return Options._instance
 
     def __init__(self):
-        parser = argparse.ArgumentParser(prog='fn2exif.py', add_help=True)
+        parser = argparse.ArgumentParser(prog=Path('__file__').name, add_help=True)
         parser.add_argument('path',
                             help='Source path')
         parser.add_argument('--timeonly', '-t', action='store_true', default=False,
@@ -84,15 +82,14 @@ def main():
     options = Options.get_instance()()
 
     Msema = threading.Semaphore(psutil.cpu_count())
-    src_path = uni(options.path)
-    srclist = rListFiles(src_path)
-    for src_fn in srclist:
+    src_path = Path(options.path)
+    for src_fn in src_path.rglob('*'):
         try:
             Msema.acquire()
             setTagsThread(src_fn, Msema).start()
         except Exception as e:
             Msema.release()
-            print(uni(e.message))
+            print(e.message)
 
 
 if __name__ == '__main__':

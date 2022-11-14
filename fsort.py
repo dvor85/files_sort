@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import os
-import shutil
 import time
 import argparse
 import subprocess
@@ -10,8 +9,9 @@ import tempfile
 import locale
 import shlex
 import threading
-from utils import *
+import utils
 import json
+from pathlib import Path
 import datetime
 
 
@@ -27,7 +27,7 @@ class Options():
         return Options._instance
 
     def __init__(self):
-        parser = argparse.ArgumentParser(prog='fsort.py', add_help=True)
+        parser = argparse.ArgumentParser(prog=Path('__file__').name, add_help=True)
         parser.add_argument('src_path',
                             help='Source path template')
         parser.add_argument('--directory-template', '-d',
@@ -53,40 +53,35 @@ EXIF_PARAMS = ['DateTimeOriginal', 'CreateDate', 'ModifyDate', 'FileModifyDate',
 class Fsort():
     def __init__(self):
         self.options = Options.get_instance()()
-        self.src_path = os.path.normpath(self.options.src_path)
+        self.src_path = Path(self.options.src_path).absolute()
         self.gthumb_cat = {}
-        self.gthumb_root = os.path.expanduser("~/.local/share/gthumb/catalogs")
+        self.gthumb_root = Path("~/.local/share/gthumb/catalogs").expanduser()
 
     def add_gthumb_catalog(self, fn, dt=None):
-        _fn = os.path.abspath(fn)
+        _fn = Path(fn).absolute()
         if dt is None:
-            dt = fileDatetime(_fn)
-        if dt.strftime(self.options.directory_template) in self.gthumb_cat:
-            self.gthumb_cat[dt.strftime(self.options.directory_template)].append(_fn)
-        else:
-            self.gthumb_cat[dt.strftime(self.options.directory_template)] = [_fn]
+            dt = utils.fileDatetime(_fn)
+        self.gthumb_cat.setdefault(dt.strftime(self.options.directory_template), []).append(_fn)
 
     def write_gthumb_catalogs(self):
         for dt, files in self.gthumb_cat.items():
             _y = dt[:4]
             _lines = []
-            _fn = os.path.join(self.gthumb_root, _y, "{0}.catalog".format(dt))
-            _xml_b = """<?xml version="1.0" encoding="UTF-8"?>
+            _fn = self.gthumb_root / _y / f"{dt}.catalog"
+            _xml_b = f"""<?xml version="1.0" encoding="UTF-8"?>
 <catalog version="1.0">
-<date>{date} 00:00:00</date>
-<files>\n""".format(date=dt.replace('-', ':'))
+<date>{dt.replace('-', ':')} 00:00:00</date>
+<files>\n"""
             if not self.options.create_ghtumb:
-                if os.path.exists(_fn):
-                    with open(_fn, mode='r', encoding='utf8') as a_xml:
-                        _lines = a_xml.readlines()
-                    _lines = [x.rstrip('\n') for x in _lines if 'file://' in x]
+                if _fn.is_file():
+                    _lines = [x.rstrip('\n') for x in _fn.read_text().splitlines() if 'file://' in x]
             for _f in files:
-                _l = '<file uri="file://{file}" />'.format(file=_f.replace('\\', '/').replace(':', ''))
+                _l = f'<file uri="{_f.as_uri()}" />'
                 if _l not in _lines:
                     _lines.append(_l)
 
-            makedirs(os.path.join(self.gthumb_root, _y))
-            with open(_fn, mode='w', encoding='utf8') as a_xml:
+            utils.mkdir(self.gthumb_root / _y)
+            with _fn.open(mode='w') as a_xml:
                 a_xml.write(_xml_b)
                 a_xml.write("\n".join(_lines))
                 a_xml.write("\n</files>\n</catalog>")
@@ -94,46 +89,44 @@ class Fsort():
     def write_gthumb_last_added(self):
         if len(self.gthumb_cat) > 0:
             name = "Добавленные {date}".format(date=datetime.datetime.today().strftime('%Y-%m-%d'))
-            _xml_b = """<?xml version="1.0" encoding="UTF-8"?>
+            _xml_b = f"""<?xml version="1.0" encoding="UTF-8"?>
     <catalog version="1.0">
-    <date>{date} 00:00:00</date>
+    <date>{datetime.datetime.today():%Y:%m:%d} 00:00:00</date>
     <name>{name}</name>
-    <files>\n""".format(date=datetime.datetime.today().strftime('%Y:%m:%d'), name=name)
-            _fn = os.path.join(self.gthumb_root, "{0}.catalog".format(name))
+    <files>\n"""
+            _fn = self.gthumb_root / f"{name}.catalog"
             _lines = []
             if not self.options.create_ghtumb:
-                if os.path.exists(_fn):
-                    with open(_fn, mode='r', encoding='utf8') as a_xml:
-                        _lines = a_xml.readlines()
-                    _lines = [x.rstrip('\n') for x in _lines if 'file://' in x]
-            for dt, files in self.gthumb_cat.items():
+                if _fn.is_file():
+                    _lines = [x.rstrip('\n') for x in _fn.read_text().splitlines() if 'file://' in x]
+            for files in self.gthumb_cat.values():
                 for _f in files:
-                    _l = '<file uri="file://{file}" />'.format(file=_f.replace('\\', '/').replace(':', ''))
+                    _l = f'<file uri="{_f.as_uri()}" />'
                     if _l not in _lines:
                         _lines.append(_l)
 
-            with open(_fn, mode='w', encoding='utf8') as a_xml:
+            with _fn.open(mode='w') as a_xml:
                 a_xml.write(_xml_b)
                 a_xml.write("\n".join(_lines))
                 a_xml.write("\n</files>\n</catalog>")
 
     def main(self):
-        src_path = os.path.normpath(self.options.src_path)
+        src_path = Path(self.options.src_path).absolute()
         with tempfile.NamedTemporaryFile() as tmp:
-            subprocess.call(shlex.split(fs_enc(
+            subprocess.call(shlex.split(
                 '"{exiftool}" -charset filename={charset} -q -m -fast \
                  -json {recurse} {exif_params} "{path}"'.format(
-                    exif_params=" ".join(['-%s' % x for x in EXIF_PARAMS + ['SourceFile']]),
+                    exif_params=" ".join(f'-{x}' for x in EXIF_PARAMS + ('SourceFile')),
                     exiftool=self.options.exiftool,
                     path=src_path,
                     recurse='-r' if self.options.recurse else '',
-                    charset=locale.getpreferredencoding()))), stdout=tmp)
+                    charset=locale.getpreferredencoding())), stdout=tmp)
             tmp.seek(0)
             srclist = json.load(tmp)
         for meta in srclist:
             try:
-                src_fn = os.path.abspath(meta['SourceFile'])
-                src_dt = datetimeFromMeta(meta, exif_params=EXIF_PARAMS)
+                src_fn = Path(meta['SourceFile']).absolute()
+                src_dt = utils.datetimeFromMeta(meta, exif_params=EXIF_PARAMS)
                 if self.options.create_ghtumb:
                     self.add_gthumb_catalog(src_fn, src_dt)
                     os.utime(src_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
@@ -141,39 +134,37 @@ class Fsort():
                     folder_name = src_dt.strftime(self.options.directory_template)
 
                     if len(self.options.filename_template) > 0:
-                        new_fn = "{dt}{ext}".format(dt=src_dt.strftime(self.options.filename_template),
-                                                    ext=os.path.splitext(src_fn)[1])
+                        new_fn = f"{src_dt.strftime(self.options.filename_template)}{src_fn.suffix}"
                     else:
-                        new_fn = os.path.basename(src_fn)
+                        new_fn = src_fn.name
 
-                    if os.path.isdir(src_path):
-                        dst_dir = os.path.join(src_path, folder_name)
+                    if src_path.is_dir():
+                        dst_dir = src_path / folder_name
                     else:
-                        dst_dir = os.path.join(os.path.dirname(src_path), folder_name)
+                        dst_dir = src_path.parent / folder_name
 
                     try:
-                        os.mkdir(dst_dir)
+                        utils.mkdir(dst_dir)
                     except OSError:
                         pass
 
-                    dst_fn = os.path.normpath(os.path.join(dst_dir, new_fn))
-                    split_fn = os.path.splitext(dst_fn)
+                    dst_fn = (dst_dir / new_fn).absolute()
 
                     i = 0
-                    while os.path.isfile(dst_fn):
-                        if shutil._samefile(src_fn, dst_fn):
+                    while dst_fn.is_file():
+                        if src_fn.samefile(dst_fn):
                             break
-                        if os.path.getsize(src_fn) == os.path.getsize(dst_fn) and md5sum(src_fn) == md5sum(dst_fn):
-                            os.unlink(dst_fn)
+                        if src_fn.stat().st_size == dst_fn.stat().st_size and utils.md5sum(src_fn) == utils.md5sum(dst_fn):
+                            dst_fn.unlink()
                         else:
                             i += 1
-                            dst_fn = "{fn}-{i}{ext}".format(fn=split_fn[0], i=i, ext=split_fn[1])
+                            dst_fn = dst_fn.with_name(f"{dst_fn.stem}-{i}{dst_fn.suffix}")
                     else:
-                        shutil.move(src_fn, dst_fn)
-                        print("{src} -> {dst}".format(src=src_fn, dst=dst_fn))
+                        src_fn.replace(dst_fn)
+                        print(f"{src_fn} -> {dst_fn}")
 
                         try:
-                            os.rmdir(os.path.dirname(src_fn))
+                            utils.rmdir(src_fn)
                         except OSError:
                             pass
 
@@ -181,7 +172,7 @@ class Fsort():
                     os.utime(dst_fn, (time.mktime(src_dt.timetuple()), time.mktime(src_dt.timetuple())))
 
             except Exception as e:
-                print(uni(e.message))
+                print(e.message)
 
 
 if __name__ == '__main__':

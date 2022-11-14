@@ -2,16 +2,16 @@
 # -*- coding: utf-8 -*-
 
 import requests
-import os
 import argparse
 import threading
+from pathlib import Path
 import eyed3
 from eyed3 import id3
 
 import time
 import re
 import psutil
-from utils import *
+import utils
 
 
 _re_filename = re.compile(r'(?P<artist>.*?)[\s_]*-+[\s_]*(?P<title>.*)')
@@ -19,8 +19,7 @@ _re_strip = re.compile(r'[\(\[].*?[\)\]]|^\d+[\.\s\-]*|\.+$|[^\s]{1}\.')
 
 
 def request(url, method='get', params=None, **kwargs):
-    params_str = "?" + "&".join(("{k}={v}".format(k=uni(k), v=uni(v))
-                                 for k, v in params.items())) if params and method == 'get' else ""
+    params_str = "?" + "&".join((f"{k}={v}" for k, v in params.items())) if params and method == 'get' else ""
 #     print(fmt("{t} | {u}{p}", u=url, p=params_str, t=time.time()))
     if not url:
         return
@@ -147,7 +146,7 @@ class LastFM():
             r = request(self.url, params=params)
         info = r.json()
         if info.get('error'):
-            raise ValueError(fmt("{msg}: {desc}", msg=info.get('message'), desc=LastFM.ERRORS[info['error']]))
+            raise ValueError(f"{info.get('message')}: {LastFM.ERRORS[info['error']]}")
 
         image = self.getBestImageOf(info['artist'])
         if not image['img_data']:
@@ -173,8 +172,8 @@ class LastFM():
             r = request(self.url, params=params)
         ts = r.json()
         if ts.get('error'):
-            raise ValueError(fmt("{msg}: {desc}", msg=ts.get('message'), desc=LastFM.ERRORS[ts['error']]))
-        if str2int(ts['results']["opensearch:totalResults"]) == 0:
+            raise ValueError(f"{ts.get('message')}: {LastFM.ERRORS[ts['error']]}")
+        if utils.str2int(ts['results']["opensearch:totalResults"]) == 0:
             raise ValueError('No tracks found')
 
         tracks = ts['results']['trackmatches']['track']
@@ -203,7 +202,7 @@ class LastFM():
         info = r.json()
 
         if info.get('error'):
-            raise ValueError(fmt("{msg}: {desc}", msg=info.get('message'), desc=LastFM.ERRORS[info['error']]))
+            raise ValueError(f"{info.get('message')}: {LastFM.ERRORS[info['error']]}")
 
         res = dict(
             artist=info['track']['artist']['name'],
@@ -226,21 +225,19 @@ class setTagsThread(threading.Thread):
     def __init__(self, src_fn, msema):
         threading.Thread.__init__(self)
         self.daemon = False
-        self.src_fn = src_fn
+        self.src_fn = Path(src_fn)
         self.msema = msema
         self.options = Options.get_instance()()
 
     def get_local_cover(self):
         names = ['cover', 'poster', 'album', 'front', 'back', 'cd', 'folder']
 
-        ls = os.listdir(os.path.dirname(self.src_fn))
-        for fn in ls:
-            full_fn = os.path.join(os.path.dirname(self.src_fn), fn)
-            if os.path.isfile(full_fn):
+        for fn in self.src_fn.iterdir():
+            if fn.is_file():
                 for c in names:
-                    if c in fn.lower():
-                        return {'img_data': open(full_fn, 'rb').read(),
-                                'mime_type': 'image/{ext}'.format(ext=fn.split('.')[1])}
+                    if c in fn.name.lower():
+                        return {'img_data': fn.read_bytes(),
+                                'mime_type': f'image/{fn.suffix}'}
 
         return {'img_data': None, 'mime_type': None}
 
@@ -269,7 +266,7 @@ class setTagsThread(threading.Thread):
         return info
 
     def getInfoFromFilename(self):
-        fn = _strip(os.path.splitext(os.path.basename(self.src_fn))[0].replace('_', ' '))
+        fn = _strip(self.src_fn.stem.replace('_', ' '))
         art_title = _re_filename.search(fn)
         if art_title:
             return dict(title=art_title.group('title'),
@@ -301,8 +298,7 @@ class setTagsThread(threading.Thread):
                         image=self.get_local_cover(),)
 
             if self.options.alternative_encoding:
-                for k, v in info.items():
-                    info[k] = uni(v, self.options.alternative_encoding)
+                info.update({k: utils.uni(v, self.options.alternative_encoding) for k, v in info.items()})
 
             if not info['title']:
                 info.update(self.getInfoFromFilename())
@@ -355,7 +351,7 @@ class Options():
         return Options._instance
 
     def __init__(self):
-        parser = argparse.ArgumentParser(prog='mp3tags.py', add_help=True)
+        parser = argparse.ArgumentParser(prog=Path('__file__').name, add_help=True)
         parser.add_argument('src_path',
                             help='Source path template')
         parser.add_argument('--force', '-f', action='store_true',
@@ -375,19 +371,17 @@ def main():
     options = Options.get_instance()()
     eyed3.log.setLevel("ERROR")
 
-    src_path = uni(options.src_path)
-    srclist = rListFiles(src_path)
+    src_path = Path(options.src_path)
 
     Msema = threading.Semaphore(psutil.cpu_count())
 
-    for f in srclist:
+    for f in src_path.rglob('*'):
         try:
             Msema.acquire()
-            src_fn = uni(os.path.normpath(f))
-            setTagsThread(src_fn, Msema).start()
+            setTagsThread(f.absolute(), Msema).start()
         except Exception as e:
             Msema.release()
-            print(uni(e.message))
+            print(e.message)
 
 
 if __name__ == '__main__':
