@@ -51,6 +51,7 @@ EXIF_PARAMS = ['DateTimeOriginal', 'CreateDate', 'ModifyDate', 'FileModifyDate',
 
 
 class Fsort():
+
     def __init__(self):
         self.options = Options.get_instance()()
         self.src_path = Path(self.options.src_path).absolute()
@@ -116,7 +117,7 @@ class Fsort():
             subprocess.call(shlex.split(
                 '"{exiftool}" -charset filename={charset} -q -m -fast \
                  -json {recurse} {exif_params} "{path}"'.format(
-                    exif_params=" ".join(f'-{x}' for x in EXIF_PARAMS + ('SourceFile')),
+                    exif_params=" ".join(f'-{x}' for x in EXIF_PARAMS + ['SourceFile']),
                     exiftool=self.options.exiftool,
                     path=src_path,
                     recurse='-r' if self.options.recurse else '',
