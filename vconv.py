@@ -17,7 +17,6 @@ try:
 except ImportError:
     import json
 
-
 EXIF_PARAMS = ('DateTimeOriginal', 'CreateDate', 'ModifyDate', 'FileModifyDate', 'FileCreateDate')
 
 
@@ -62,6 +61,7 @@ def main():
     src_path = options.src_path
     dst_path = Path(options.dst_path).absolute()
     overwrite = "_encoded_" if not options.overwrite else ""
+    srclist = []
 
     with tempfile.NamedTemporaryFile() as tmp:
         subprocess.call(shlex.split(
@@ -69,7 +69,9 @@ def main():
             " ".join(f"-{x}" for x in EXIF_PARAMS + ("SourceFile", "MIMEType", "AvgBitrate")) +
             f' -q -m -fast -json -r "{src_path}"'), stdout=tmp)
         tmp.seek(0)
-        srclist = json.load(tmp)
+        if len(tmp.read(1)) > 0:
+            tmp.seek(0)
+            srclist = json.load(tmp)
 
     for meta in srclist:
         if 'video' in meta['MIMEType']:

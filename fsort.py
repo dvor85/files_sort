@@ -113,6 +113,7 @@ class Fsort():
 
     def main(self):
         src_path = Path(self.options.src_path).absolute()
+        srclist = []
         with tempfile.NamedTemporaryFile() as tmp:
             subprocess.call(shlex.split(
                 '"{exiftool}" -charset filename={charset} -q -m -fast \
@@ -123,7 +124,10 @@ class Fsort():
                     recurse='-r' if self.options.recurse else '',
                     charset=locale.getpreferredencoding())), stdout=tmp)
             tmp.seek(0)
-            srclist = json.load(tmp)
+            if len(tmp.read(1)) > 0:
+                tmp.seek(0)
+                srclist = json.load(tmp)
+
         for meta in srclist:
             try:
                 src_fn = Path(meta['SourceFile']).absolute()
